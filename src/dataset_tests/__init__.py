@@ -4,5 +4,6 @@ from .utils import (
     get_dataset,
     plot_clusters,
     plot_histograms,
+    plot_scatter,
     plot_violin_plots,
 )

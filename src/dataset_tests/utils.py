@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
+import scipy
 
 import os
 import glob
@@ -32,12 +33,17 @@ def get_dataset():
 def plot_histograms(df, category_name: str = None, normalize: bool = True):
     # plot distribution of population-wide features
     fig, axes = plt.subplots(2, 2, figsize=(12, 15))
+    norm_feature_names = ["CT_norm", "SD_norm", "MD_norm", "ICVF_norm"]
     feature_names = ["CT", "SD", "MD", "ICVF"]
     for i, feature in enumerate(feature_names):
-        if category_name is None:
+        if category_name is None or "Outliers" in category_name:
             category_name = f"Population {feature} Outliers"
         sns.histplot(
-            df, x=feature, hue=category_name, bins=100, ax=axes[i % 2][i // 2]
+            df,
+            x=norm_feature_names[i] if normalize else feature,
+            hue=category_name,
+            bins=100,
+            ax=axes[i % 2][i // 2],
         )
     fig.savefig(
         f"{RESULTS_FOLDER}/{'normalized' if normalize else 'unnormalized'}_feature_histograms/{category_name}-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}"
@@ -46,12 +52,10 @@ def plot_histograms(df, category_name: str = None, normalize: bool = True):
     # plot average histogram of each subject for each feature (low opacity overlayed plot)
     fig, axes = plt.subplots(2, 2, figsize=(12, 15))
     for i, feature in enumerate(feature_names):
-        if category_name is None:
-            category_name = f"Subject {feature} Outliers"
         sns.histplot(
             df,
-            x=feature,
-            hue=category_name,
+            x=norm_feature_names[i] if normalize else feature,
+            hue="Subject",
             bins=100,
             legend=False,
             ax=axes[i % 2][i // 2],
@@ -88,6 +92,61 @@ def plot_violin_plots(df, normalize: bool = True):
     return True
 
 
+def plot_scatter(
+    df,
+    remove_outliers: bool = True,
+    average: bool = True,
+    normalize: bool = True,
+):
+    if normalize:
+        feature_names = ["CT_norm", "SD_norm", "MD_norm", "ICVF_norm"]
+    else:
+        feature_names = ["CT", "SD", "MD", "ICVF"]
+    if remove_outliers:
+        assert (
+            "Population CT Outliers" in df.columns
+            and "Population SD Outliers" in df.columns
+            and "Population MD Outliers" in df.columns
+            and "Population ICVF Outliers" in df.columns
+        )
+        df = df[~df["Population CT Outliers"]]
+        df = df[~df["Population SD Outliers"]]
+        df = df[~df["Population MD Outliers"]]
+        df = df[~df["Population ICVF Outliers"]]
+    if average:
+        df = df.groupby(by=["Region"])[feature_names].mean()
+    # graph all six possible combinations of 4-features
+    fig, axes = plt.subplots(2, 3, figsize=(12, 15))
+    for i in range(3):
+        for j in range(i + 1, 4):
+            ax = (
+                axes[i][j - 1]
+                if i == 0
+                else axes[i][j - 2]
+                if i == 1
+                else axes[1][2]
+            )
+            p = sns.regplot(
+                df,
+                x=feature_names[i],
+                y=feature_names[j],
+                robust=remove_outliers,
+                ax=ax,
+            )
+            ax.set_ylim(-1.5, 3)
+            # calculate slope and intercept of regression equation
+            _, _, r, _, _ = scipy.stats.linregress(
+                x=df[feature_names[i]], y=df[feature_names[j]]
+            )
+            # add regression equation to plot
+            ax.set_title("r^2 = " + str(round(r**2, 3)))
+
+    fig.savefig(
+        f"{RESULTS_FOLDER}/{'normalized' if normalize else 'unnormalized'}_scatter/o{remove_outliers}-a{average}-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.png"
+    )
+    plt.close()
+
+
 def plot_clusters(
     df,
     category_name: str = "Cluster",
@@ -118,6 +177,6 @@ def plot_clusters(
                 ax=ax,
             )
     fig.savefig(
-        f"{RESULTS_FOLDER}/{'normalized' if normalize else 'unnormalized'}_clusters/{category_name}-{remove_outliers}-{average}-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.png"
+        f"{RESULTS_FOLDER}/{'normalized' if normalize else 'unnormalized'}_clusters/{category_name}-o{remove_outliers}-a{average}-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.png"
     )
     plt.close()

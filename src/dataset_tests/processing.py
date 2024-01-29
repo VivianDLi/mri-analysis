@@ -23,7 +23,9 @@ def get_outliers(df, use_modified: bool = False, outlier_cutoff: float = 3):
         norm_df["ICVF_norm"].abs() > outlier_cutoff
     )
     # find outliers for the subject-wide feature distribution
-    df.groupby(by=["Subject"], group_keys=False).apply(map_subject_outliers)
+    # df = df.groupby(by=["Subject"], group_keys=False).apply(
+    #     map_subject_outliers
+    # )
     return df
 
 
