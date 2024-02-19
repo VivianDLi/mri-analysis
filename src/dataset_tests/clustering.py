@@ -1,5 +1,4 @@
-from sklearn.cluster import AgglomerativeClustering, HDBSCAN, BisectingKMeans
-from sklearn.decomposition import PCA
+from sklearn.cluster import AgglomerativeClustering
 
 
 def agglomerative_clustering(
@@ -27,10 +26,3 @@ def agglomerative_clustering(
 # https://scikit-learn.org/stable/modules/generated/sklearn.cluster.HDBSCAN.html#sklearn.cluster.HDBSCAN
 # https://scikit-learn.org/stable/modules/generated/sklearn.cluster.BisectingKMeans.html#sklearn.cluster.BisectingKMeans
 # https://scikit-learn.org/stable/modules/generated/sklearn.cluster.BisectingKMeans.html#sklearn.cluster.BisectingKMeans
-
-
-def principle_component_analysis(df, column_names):
-    components = PCA(n_components=2).fit_transform(df[column_names].to_numpy())
-    df["Component1"] = components[:, 0]
-    df["Component2"] = components[:, 1]
-    return df
