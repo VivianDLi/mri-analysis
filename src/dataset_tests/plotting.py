@@ -53,7 +53,9 @@ def get_dataset():
     return df
 
 
-def get_gp_dataset(subset: int = 10, normalize: bool = True):
+def get_gp_dataset(
+    subset: int = 10, normalize: bool = True, average: bool = False
+):
     """Loads the dataset as a DataFrame with 4 sorted columns: [brain] Region, Subject, Feature, Value"""
     df = get_dataset()
     if normalize:
@@ -69,9 +71,18 @@ def get_gp_dataset(subset: int = 10, normalize: bool = True):
         value_name="Value",
     )
     df = df.set_index(["Region", "Feature", "Subject"]).sort_index()
-    return df.loc[
-        df.index.get_level_values(0).unique()[:subset].to_list(), :, :
-    ]
+    if subset is not None:
+        indices = np.random.choice(
+            len(df.index.get_level_values(0).unique()),
+            size=subset,
+            replace=False,
+        )
+        df = df.loc[
+            df.index.get_level_values(0).unique()[indices].to_list(), :, :
+        ]
+    if average:
+        df = average_across(df, ["Region", "Feature"])
+    return df
 
 
 ## Plot Linear Relationships
@@ -483,7 +494,9 @@ def plot_pcas(
 
 
 ## graph explained variance over number of components
-def plot_pca_variance(df, additional_columns=[], normalize: bool = True):
+def plot_pca_variance(
+    df, additional_columns=[], normalize: bool = True, average: bool = False
+):
     if normalize:
         feature_names = [
             "CT_norm",
@@ -495,7 +508,8 @@ def plot_pca_variance(df, additional_columns=[], normalize: bool = True):
         df = normalize_data(df)
     else:
         feature_names = ["CT", "SD", "MD", "ICVF", *additional_columns]
-
+    if average:
+        df = average_across(df, "Subject")
     variances = []
     exp_var = 0
     num_components = 1
@@ -510,7 +524,7 @@ def plot_pca_variance(df, additional_columns=[], normalize: bool = True):
     plt.ylabel("Percentage of Explained Variance")
     plt.title("PCA Explained Variance")
     plt.savefig(
-        f"{RESULTS_FOLDER}/pcas/explained-variance-add-{additional_columns}-norm-{normalize}-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.png"
+        f"{RESULTS_FOLDER}/pcas/explained-variance-add-{additional_columns}-norm-{normalize}-avg-{average}-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.png"
     )
     plt.close()
 
@@ -637,42 +651,43 @@ def plot_gp_correlation(
     normalize: bool = False,
     cluster: bool = False,
     sort: bool = False,
-    subset: int = 1,
+    subset: int = 10,
     sort_by: List[str] = ["Region", "Subject", "Feature"],
     model_name: str = "model",
 ):
     if use_file:
         model = create_named_gp(
-            df, model_name, n_components=n_components, optimize=False
+            df,
+            model_name,
+            n_components=n_components,
+            sort_by=sort_by,
+            optimize=False,
         )
         model = load_gp_model(model, f"./src/gp_models/{model_name}.npy")
     else:
         model = create_named_gp(
-            df, model_name, n_components=n_components, optimize=True
+            df,
+            model_name,
+            n_components=n_components,
+            sort_by=sort_by,
+            optimize=True,
         )
     correlation, labels = get_gp_covariance(df, model, sort_by=sort_by)
     if subset is not None:
         subset_length = df.loc[
-            df.index.get_level_values(0).unique()[:subset].to_list(), :, :
+            df.index.get_level_values("Region").unique()[:subset].to_list(),
+            :,
+            :,
         ].shape[0]
         correlation = correlation.iloc[:subset_length, :subset_length]
         labels = labels[:subset_length]
-    color_indices = pd.DataFrame(
-        labels, columns=["Region", "Subject", "Feature"]
-    )
+    index_names = pd.DataFrame(labels, columns=sort_by)
+    color_indices = pd.DataFrame(labels, columns=sort_by)
     region_lut = dict(
         zip(
             color_indices["Region"].unique(),
             sns.color_palette(
                 "hls", n_colors=len(color_indices["Region"].unique())
-            ),
-        )
-    )
-    subject_lut = dict(
-        zip(
-            color_indices["Subject"].unique(),
-            sns.color_palette(
-                "mako", n_colors=len(color_indices["Subject"].unique())
             ),
         )
     )
@@ -685,30 +700,36 @@ def plot_gp_correlation(
         )
     )
     color_indices["Region"] = color_indices["Region"].map(region_lut)
-    color_indices["Subject"] = color_indices["Subject"].map(subject_lut)
     color_indices["Feature"] = color_indices["Feature"].map(feature_lut)
+    colors = [
+        color_indices["Region"],
+        color_indices["Feature"],
+    ]
+    if "Subject" in sort_by:
+        subject_lut = dict(
+            zip(
+                color_indices["Subject"].unique(),
+                sns.color_palette(
+                    "mako", n_colors=len(color_indices["Subject"].unique())
+                ),
+            )
+        )
+        color_indices["Subject"] = color_indices["Subject"].map(subject_lut)
+        colors = [
+            color_indices["Region"],
+            color_indices["Feature"],
+            color_indices["Subject"],
+        ]
     x = correlation.to_numpy()
     if normalize:
         x = (x - np.min(x)) / (np.max(x) - np.min(x))
     if sort:
-        sorted_indices = np.argsort(x, axis=1)
+        sorted_indices = np.flip(np.argsort(x, axis=1), axis=1)
         x = np.take_along_axis(x, sorted_indices, axis=1)
     sns.clustermap(
         x,
-        row_colors=[
-            color_indices["Region"],
-            color_indices["Feature"],
-            color_indices["Subject"],
-        ],
-        col_colors=(
-            None
-            if sort
-            else [
-                color_indices["Region"],
-                color_indices["Feature"],
-                color_indices["Subject"],
-            ]
-        ),
+        row_colors=colors,
+        col_colors=(None if sort else colors),
         row_cluster=False,
         col_cluster=cluster,
         cmap="mako",
@@ -717,11 +738,27 @@ def plot_gp_correlation(
         f"{RESULTS_FOLDER}/gps/correlation-{model_name}-clst{cluster}-sort{sort}-subset{subset}-{sort_by}-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.png"
     )
     plt.close()
+    plot_brain(
+        index_names["Region"].unique(),
+        parc="HCP",
+        cbar=True,
+        cbartitle="Region Indices",
+        cmap=sns.color_palette(
+            "hls", n_colors=len(index_names["Region"].unique()), as_cmap=True
+        ),
+        outfile=f"{RESULTS_FOLDER}/brainplots/correlation-{model_name}-clst{cluster}-sort{sort}-subset{subset}-{sort_by}-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.png",
+        categorical=True,
+    )
+    plt.close()
 
 
 ## graph gplvm fit
-def plot_gp_latents(df, n_components: int = 2):
-    model = create_named_gp(df, "model", n_components)
+def plot_gp_latents(
+    df, sort_by, n_components: int = 2, model_name: str = "model"
+):
+    model = create_named_gp(
+        df, model_name, n_components, sort_by=sort_by, optimize=False
+    )
     labels = np.array([i[1] for i in df.index.values])
 
     fig, axes = plt.subplots(1, 3, figsize=(20, 5))
@@ -732,7 +769,7 @@ def plot_gp_latents(df, n_components: int = 2):
     )
     fig.suptitle(f"GP-LVM Latents for all data")
     fig.savefig(
-        f"{RESULTS_FOLDER}/gps/lvm-latents-feature-ncomp-{n_components}-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.png"
+        f"{RESULTS_FOLDER}/gps/lvm-latents-{model_name}-ncomp-{n_components}-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.png"
     )
     plt.close()
 

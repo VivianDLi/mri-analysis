@@ -1,3 +1,4 @@
+from typing import List
 import pandas as pd
 import scipy
 from scipy.stats import zscore, median_abs_deviation
@@ -50,7 +51,7 @@ def get_regressions(df, combinations, group_name: str = "Subject"):
     ).reset_index(names="Subject")
 
 
-def average_across(df, group: str):
+def average_across(df, group: str | List[str]):
     """Returns a new df averaging all columns across subjects"""
     number_columns = df.select_dtypes(include="number").columns
     return df.groupby(group)[number_columns].mean()

@@ -21,6 +21,7 @@ def plot_brain(
     cmap="viridis",
     vmin=None,
     vmax=None,
+    categorical=False,
 ):
     # this works for aparc, HCP, 500.aparc, 500.sym.aparc
     if parc not in [
@@ -36,7 +37,9 @@ def plot_brain(
 
     surfer_location = os.path.dirname(__file__)
 
-    myvec = np.array(myvec) + 1e-15
+    # additional code for plotting keyed regions on brain
+    if not categorical:
+        myvec = np.array(myvec) + 1e-15
     annot_lh = read_annot(
         surfer_location + "/label/lh." + parc + ".annot", orig_ids=True
     )
@@ -74,6 +77,17 @@ def plot_brain(
     ROI_labels = np.array([x for x in regions if x not in drop_regions])
 
     value_dict = dict(zip(ROI_labels, myvec))
+
+    if categorical:
+        # myvec is a unique list of region names
+        region_indices = np.zeros(len(ROI_labels))
+        color_index = 1
+        for region in myvec:
+            region_indices[
+                np.where(ROI_labels == region.replace("-", "_"))
+            ] = color_index
+            color_index += 1
+        value_dict = dict(zip(ROI_labels, region_indices))
 
     label_nums_l = list(annot_lh[-2][:, -1])
     label_nums_r = list(annot_rh[-2][:, -1])

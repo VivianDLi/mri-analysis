@@ -101,17 +101,15 @@ def bayesian_gp_model(
 
 
 def get_gp_covariance(
-    df, model, sort_by: List[str] = ["Region", "Subject", "Feature"]
+    df, model, sort_by: List[str] = ["Region", "Feature", "Subject"]
 ):
     kernel = model.kern.K(model.X)
     data = df.reset_index().sort_values(
         by=sort_by,
         ignore_index=True,
     )
-    labels = list(zip(data["Region"], data["Subject"], data["Feature"]))
-    index = pd.MultiIndex.from_tuples(
-        labels, names=["Region", "Subject", "Feature"]
-    )
+    labels = list(zip(*[data[reg] for reg in sort_by]))
+    index = pd.MultiIndex.from_tuples(labels, names=sort_by)
     correlation = pd.DataFrame(kernel, index=index, columns=index)
     correlation = correlation.reorder_levels(sort_by, axis=0)
     correlation = correlation.reorder_levels(sort_by, axis=1)
@@ -119,13 +117,14 @@ def get_gp_covariance(
 
 
 def create_named_gp(
-    df, model_name: str, n_components: int, optimize: bool = True
+    df, model_name: str, n_components: int, sort_by, optimize: bool = True
 ):
     match model_name:
         case "model":
             return gp_model(
                 df,
                 n_components=n_components,
+                sort_by=sort_by,
                 expand_dims=False,
                 optimize=optimize,
             )
@@ -133,6 +132,7 @@ def create_named_gp(
             return gp_model(
                 df,
                 n_components=n_components,
+                sort_by=sort_by,
                 expand_dims=True,
                 optimize=optimize,
             )
@@ -140,6 +140,7 @@ def create_named_gp(
             return bayesian_gp_model(
                 df,
                 n_components=n_components,
+                sort_by=sort_by,
                 expand_dims=False,
                 optimize=optimize,
             )
@@ -147,6 +148,7 @@ def create_named_gp(
             return bayesian_gp_model(
                 df,
                 n_components=n_components,
+                sort_by=sort_by,
                 expand_dims=True,
                 optimize=optimize,
             )
@@ -154,6 +156,7 @@ def create_named_gp(
             return sparse_gp_model(
                 df,
                 n_components=n_components,
+                sort_by=sort_by,
                 expand_dims=False,
                 optimize=optimize,
             )
@@ -161,6 +164,7 @@ def create_named_gp(
             return sparse_gp_model(
                 df,
                 n_components=n_components,
+                sort_by=sort_by,
                 expand_dims=True,
                 optimize=optimize,
             )
@@ -168,6 +172,7 @@ def create_named_gp(
             return gp_model(
                 df,
                 n_components=n_components,
+                sort_by=sort_by,
                 expand_dims=True,
                 optimize=optimize,
             )
