@@ -54,7 +54,10 @@ def get_dataset():
 
 
 def get_gp_dataset(
-    subset: int = 10, normalize: bool = True, average: bool = False
+    subset: int = 10,
+    normalize: bool = True,
+    average: bool = False,
+    md: bool = False,
 ):
     """Loads the dataset as a DataFrame with 4 sorted columns: [brain] Region, Subject, Feature, Value"""
     df = get_dataset()
@@ -63,14 +66,17 @@ def get_gp_dataset(
         df = normalize_data(df)
     else:
         feature_names = ["CT", "SD", "MD", "ICVF"]
-    df = pd.melt(
-        df,
-        id_vars=["Region", "Subject"],
-        value_vars=feature_names,
-        var_name="Feature",
-        value_name="Value",
-    )
-    df = df.set_index(["Region", "Feature", "Subject"]).sort_index()
+    if md:
+        df = df.set_index(["Region", "Subject"]).sort_index()
+    else:
+        df = pd.melt(
+            df,
+            id_vars=["Region", "Subject"],
+            value_vars=feature_names,
+            var_name="Feature",
+            value_name="Value",
+        )
+        df = df.set_index(["Region", "Feature", "Subject"]).sort_index()
     if subset is not None:
         indices = np.random.choice(
             len(df.index.get_level_values(0).unique()),
@@ -81,7 +87,7 @@ def get_gp_dataset(
             df.index.get_level_values(0).unique()[indices].to_list(), :, :
         ]
     if average:
-        df = average_across(df, ["Region", "Feature"])
+        df = average_across(df, "Region" if md else ["Region", "Feature"])
     return df
 
 
@@ -392,7 +398,7 @@ def plot_clusters(
         df = df[~df["Population MD Outliers"]]
         df = df[~df["Population ICVF Outliers"]]
     if average:
-        df = average_across(df, "Subject")
+        df = average_across(df, "Region")
     df = agglomerative_clustering(df, feature_names)
     # graph all six possible combinations of 4-features
     fig, axes = plt.subplots(2, 3, figsize=(12, 15))
@@ -509,7 +515,7 @@ def plot_pca_variance(
     else:
         feature_names = ["CT", "SD", "MD", "ICVF", *additional_columns]
     if average:
-        df = average_across(df, "Subject")
+        df = average_across(df, "Region")
     variances = []
     exp_var = 0
     num_components = 1
@@ -575,6 +581,7 @@ def plot_pca_eigenvectors(
     df,
     n_components,
     additional_columns=[],
+    removed_columns=[],
     group_name: str = None,
     normalize: bool = True,
 ):
@@ -589,6 +596,8 @@ def plot_pca_eigenvectors(
         df = normalize_data(df)
     else:
         feature_names = ["CT", "SD", "MD", "ICVF", *additional_columns]
+    for col in removed_columns:
+        feature_names.remove(col)
     if group_name is not None:
         df = average_across(df, group_name)
     pca = principle_component_analysis(df, feature_names, n_components)
@@ -635,7 +644,7 @@ def plot_pca_eigenvectors(
         leg.legend_handles[i].set_color(cmap[i])
     fig.suptitle(f"PCA Eigenvectors for Groups: {group_name}")
     fig.savefig(
-        f"{RESULTS_FOLDER}/pcas/eigenvectors-add-{additional_columns}-group-{group_name}-norm-{normalize}-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.png"
+        f"{RESULTS_FOLDER}/pcas/eigenvectors-add-{additional_columns}-rem-{removed_columns}-group-{group_name}-norm-{normalize}-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.png"
     )
     plt.close()
 
@@ -686,25 +695,32 @@ def plot_gp_correlation(
     region_lut = dict(
         zip(
             color_indices["Region"].unique(),
-            sns.color_palette(
-                "hls", n_colors=len(color_indices["Region"].unique())
+            (
+                sns.color_palette(
+                    "hls", n_colors=len(index_names["Region"].unique())
+                )
+                if len(color_indices["Region"].unique()) <= 20
+                else sns.color_palette(
+                    "mako", n_colors=len(index_names["Region"].unique())
+                )
             ),
         )
     )
-    feature_lut = dict(
-        zip(
-            color_indices["Feature"].unique(),
-            sns.color_palette(
-                "hls", n_colors=len(color_indices["Feature"].unique())
-            ),
-        )
-    )
+
     color_indices["Region"] = color_indices["Region"].map(region_lut)
-    color_indices["Feature"] = color_indices["Feature"].map(feature_lut)
-    colors = [
-        color_indices["Region"],
-        color_indices["Feature"],
-    ]
+
+    colors = [color_indices["Region"]]
+    if "Feature" in sort_by:
+        feature_lut = dict(
+            zip(
+                color_indices["Feature"].unique(),
+                sns.color_palette(
+                    "hls", n_colors=len(color_indices["Feature"].unique())
+                ),
+            )
+        )
+        color_indices["Feature"] = color_indices["Feature"].map(feature_lut)
+        colors.append(color_indices["Feature"])
     if "Subject" in sort_by:
         subject_lut = dict(
             zip(
@@ -715,11 +731,7 @@ def plot_gp_correlation(
             )
         )
         color_indices["Subject"] = color_indices["Subject"].map(subject_lut)
-        colors = [
-            color_indices["Region"],
-            color_indices["Feature"],
-            color_indices["Subject"],
-        ]
+        colors.append(color_indices["Subject"])
     x = correlation.to_numpy()
     if normalize:
         x = (x - np.min(x)) / (np.max(x) - np.min(x))
@@ -743,8 +755,14 @@ def plot_gp_correlation(
         parc="HCP",
         cbar=True,
         cbartitle="Region Indices",
-        cmap=sns.color_palette(
-            "hls", n_colors=len(index_names["Region"].unique()), as_cmap=True
+        cmap=(
+            sns.color_palette(
+                "hls",
+                n_colors=len(index_names["Region"].unique()),
+                as_cmap=True,
+            )
+            if len(index_names["Region"].unique()) <= 20
+            else "mako"
         ),
         outfile=f"{RESULTS_FOLDER}/brainplots/correlation-{model_name}-clst{cluster}-sort{sort}-subset{subset}-{sort_by}-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.png",
         categorical=True,
