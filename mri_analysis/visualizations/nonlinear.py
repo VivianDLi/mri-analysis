@@ -15,6 +15,7 @@ from mri_analysis.datatypes import (
     LinearPlotType,
     NonlinearPlotType,
     PlotConfig,
+    SensitivityOutput,
 )
 from mri_analysis.utils import get_time_identifier
 
@@ -42,6 +43,7 @@ class NonlinearPlotter:
         self,
         covariance_data: Dict[str, CovarianceOutput] = None,
         covariance_labels: pd.DataFrame = None,
+        sensitivity_data: Dict[str, SensitivityOutput] = None,
         latent_data: LatentOutput = None,
     ) -> None:
         logger.debug(f"Creating linear plots {self.plots}...")
@@ -52,6 +54,11 @@ class NonlinearPlotter:
             ):
                 logger.warning(
                     f"Covariance plot {plot} requires a dictionary to be passed as the <covariance_data> argument and a dataframe to be passed as the <covariance_labels> argument."
+                )
+                continue
+            if "sensitivity" in plot and sensitivity_data is None:
+                logger.warning(
+                    f"Sensitivity plot {plot} requires a dictionary to be passed as the <sensitivity_data> argument."
                 )
                 continue
             if "latents" in plot and latent_data is None:
@@ -65,6 +72,8 @@ class NonlinearPlotter:
                     self._plot_gp_covariance(
                         covariance_data, covariance_labels, **config
                     )
+                case "gp_sensitivity":
+                    self._plot_gp_sensitivity(sensitivity_data, **config)
                 case "gp_latents":
                     self._plot_gp_latents(latent_data, **config)
                 case _:
@@ -89,7 +98,10 @@ class NonlinearPlotter:
         for label in color_indices.columns:
             color = (
                 "hls"
-                if (label == "Region" and color_indices[label].unique() <= 20)
+                if (
+                    label == "Region"
+                    and len(color_indices[label].unique()) <= 20
+                )
                 or label == "Feature"
                 else "mako"
             )
@@ -101,7 +113,11 @@ class NonlinearPlotter:
         for feature, covariance in covariance_data.items():
             # plot covariance matrix
             sns.clustermap(
-                covariance.to_numpy(),
+                pd.DataFrame(
+                    covariance,
+                    columns=covariance_labels,
+                    index=covariance_labels,
+                ),
                 row_colors=color_indices,
                 col_colors=color_indices,
                 row_cluster=False,
@@ -117,7 +133,7 @@ class NonlinearPlotter:
             # plot corresponding colors on brain map
             if "Region" in color_indices.columns:
                 plot_brain(
-                    color_indices["Region"].unique(),
+                    covariance_labels["Region"].unique(),
                     parc="HCP",
                     cbar=True,
                     cbartitle="Region Indices",
@@ -135,6 +151,29 @@ class NonlinearPlotter:
                 )
                 plt.close()
 
+    def _plot_gp_sensitivity(
+        self, sensitivity_data: Dict[str, SensitivityOutput], **kwargs
+    ) -> None:
+        fig, axes = plt.subplots(nrows=1, ncols=len(sensitivity_data))
+        for i, (feature, sensitivity) in enumerate(sensitivity_data.items()):
+            component_names = [
+                f"Component_{i+1}" for i in range(len(sensitivity))
+            ]
+            p = sns.barplot(
+                x=component_names,
+                y=sensitivity,
+                ax=axes[i] if len(sensitivity_data) > 1 else axes,
+                **kwargs,
+            )
+            p.set_xlabel("Component")
+            p.set_ylabel("Sensitivity")
+            p.set_title(f"GP Sensitivity for {feature}")
+        fig.suptitle("GP Sensitivity")
+        plt.savefig(
+            f"{RESULTS_PATH}/nonlinear/gp_sensitivity_{get_time_identifier()}.png"
+        )
+        plt.close()
+
     def _plot_gp_latents(self, latent_data: LatentOutput, **kwargs) -> None:
         # get all possible combinations of components
         inputs = {}
@@ -143,22 +182,30 @@ class NonlinearPlotter:
                 if x not in inputs:
                     inputs[x] = set()
                 # check for re-ordered duplicates
-                if y not in inputs or x not in inputs[y]:
+                if y not in inputs:
                     inputs[x].add(y)
+            # prevent empty sets
+            if len(inputs[x]) == 0:
+                del inputs[x]
         # graph all possible combinations of 2-way components
-        subfigs = plt.subfigures(nrows=len(inputs), ncols=1)
+        fig = plt.figure(figsize=(15, len(inputs) * 3))
+        subfigs = fig.subfigures(nrows=len(inputs), ncols=1)
         for i, x_component in enumerate(inputs):
-            axs = subfigs[i].subplots(nrows=1, ncols=len(inputs[x_component]))
+            axs = (
+                subfigs[i].subplots(nrows=1, ncols=len(inputs[x_component]))
+                if len(inputs) > 1
+                else subfigs.subplots(nrows=1, ncols=len(inputs[x_component]))
+            )
             for j, y_component in enumerate(inputs[x_component]):
                 p = sns.scatterplot(
                     x=latent_data[x_component],
                     y=latent_data[y_component],
-                    ax=axs[j],
+                    ax=axs[j] if len(inputs[x_component]) > 1 else axs,
                     **kwargs,
                 )
                 p.set_xlabel(x_component)
                 p.set_ylabel(y_component)
-        plt.suptitle(f"PCA Latents")
+        plt.suptitle("PCA Latents")
         plt.savefig(
             f"{RESULTS_PATH}/linear/pca_latents_{get_time_identifier()}.png"
         )

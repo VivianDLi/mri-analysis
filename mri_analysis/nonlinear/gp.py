@@ -7,12 +7,16 @@ import pandas as pd
 from GPy.util.initialization import initialize_latent
 from GPy.core import GP
 from GPy.kern import Kern
+from GPy.likelihoods import Likelihood, Gaussian
 from GPy.models import GPLVM, SparseGPLVM, BayesianGPLVM
 
 from mri_analysis.datatypes import (
+    DATA_FEATURES,
+    ExplainedVarianceOutput,
     GPType,
     CovarianceOutput,
     LatentOutput,
+    SensitivityOutput,
 )
 from mri_analysis.constants import MODELS_PATH
 
@@ -26,14 +30,21 @@ def get_gp_from_type(
     n_components: int,
     n_inducing: int,
     kernel: Kern,
+    likelihood: Likelihood,
     name: str,
     Z: np.ndarray = None,
 ) -> GP:
     match gp_type:
         case "GP":
-            return GPLVM(data, n_components, X=X, kernel=kernel, name=name)
+            gp = GPLVM(
+                data,
+                n_components,
+                X=X,
+                kernel=kernel,
+                name=name,
+            )
         case "Sparse":
-            return SparseGPLVM(
+            gp = SparseGPLVM(
                 data,
                 n_components,
                 X=X,
@@ -42,7 +53,7 @@ def get_gp_from_type(
                 name=name,
             )
         case "Bayesian":
-            return BayesianGPLVM(
+            gp = BayesianGPLVM(
                 data,
                 n_components,
                 X=X,
@@ -55,7 +66,9 @@ def get_gp_from_type(
             logger.warning(
                 f"Unrecognized GP type: {gp_type}. Using GPLVM instead."
             )
-            return GPLVM
+            gp = GPLVM(data, n_components, X=X, kernel=kernel, name=name)
+    gp.likelihood = likelihood
+    return gp
 
 
 class GPAnalysis:
@@ -71,7 +84,7 @@ class GPAnalysis:
         n_inducing: int = 10,
         likelihood_variance: float = 0.1,
     ):
-        self.kernels = kernels
+        self.kernels = kernels if type(kernels) == list else [kernels]
         self.gp_type = gp_type
         self.expand_dims = expand_dims
         self.name = name
@@ -80,45 +93,60 @@ class GPAnalysis:
         self.likelihood_variance = likelihood_variance
 
     def fit(
-        self, data: pd.DataFrame, n_components: int, optimize: bool = True
+        self,
+        data: pd.DataFrame,
+        n_components: int,
+        optimize: bool = True,
+        flat_data: bool = False,
     ) -> None:
         """Fits the model to some data. Required before calling any other methods."""
         # set name based on parameters
         if self.name is None:
-            self.name = f"{self.gp_type}_{self.kernel.name}_{n_components}"
+            self.name = f"{self.gp_type}_{'flat' if flat_data else 'md'}_{[kern.name for kern in self.kernels]}_{n_components}"
+        else:
+            self.name = f"{self.name}_{'flat' if flat_data else 'md'}"
         self.data = data
         # filter out numerical features only
         numerical_columns = self.data.select_dtypes(include="number").columns
         non_number_columns = set(data.columns) - set(numerical_columns)
-        self.features = numerical_columns
-        self.labels = data[non_number_columns]
+        if flat_data:
+            self.features = ["Value"]
+        else:
+            self.features = list(set(numerical_columns) & set(DATA_FEATURES))
+        self.labels = data[list(non_number_columns)]
         assert len(self.features) >= 1, "No numerical features found in data."
         # expand dimensions if enabled
-        numerical_data = self.data[numerical_columns].to_numpy()
+        numerical_data = self.data[self.features].to_numpy()
         if self.expand_dims:
             numerical_data = np.matmul(
                 numerical_data,
                 np.random.normal(0, 1e-6, size=(numerical_data.shape[1], 100)),
             )
         # initialize latent space
-        X = initialize_latent("PCA", n_components, numerical_data)
+        X, _ = initialize_latent("PCA", n_components, numerical_data)
         # initialize kernel list (copy if only one kernel)
-        if isinstance(self.kernels, Kern):
-            self.kernels = [
-                self.kernels.copy() for _ in range(len(numerical_columns))
-            ]
+        while len(self.kernels) < len(numerical_columns):
+            self.kernels.append(self.kernels[0].copy())
         assert len(self.kernels) == len(
             numerical_columns
         ), f"Number of given kernels ({len(self.kernels)}) must match the number of numerical features ({len(numerical_columns)})."
+        # initialize likelihoods
+        # set noise as 1% of variance in data
+        likelihood_variances = np.var(numerical_data, axis=0) * 0.01
+        self.likelihoods = [
+            Gaussian(variance=var) for var in likelihood_variances
+        ]
         # initialize base GP (to optimize)
+        self.gps = []
         self.gps.append(
             get_gp_from_type(
                 self.gp_type,
-                numerical_data[:, 0],
+                numerical_data[:, [0]],
                 X,
                 n_components,
                 self.n_inducing,
                 self.kernels[0],
+                self.likelihoods[0],
                 self.name + f"_{self.features[0]}",
             )
         )
@@ -128,15 +156,16 @@ class GPAnalysis:
             Z = self.gps[0].Z
         # initialize other GPs if multi-dimensional
         if len(numerical_columns) > 1:
-            for i, feature in self.features[1:]:
+            for i, feature in enumerate(self.features[1:]):
                 self.gps.append(
                     get_gp_from_type(
                         self.gp_type,
-                        numerical_data[:, i],
+                        numerical_data[:, [i]],
                         X,
                         n_components,
                         self.n_inducing,
                         self.kernels[i],
+                        self.likelihoods[i],
                         self.name + f"_{feature}",
                         Z=Z,
                     )
@@ -154,16 +183,27 @@ class GPAnalysis:
         result_dict = {}
         for i, feature in enumerate(self.features):
             result_dict[feature] = self.gps[i].kern.K(self.gps[i].X)
-        result_dict
+        return result_dict
+
+    def get_sensitivity(self) -> Dict[str, SensitivityOutput]:
+        """Gets the input sensitivity of each latent component."""
+        assert (
+            self.data is not None and self.gps is not None
+        ), f"GP needs to be fitted with data beforehand by calling <fit>."
+        result_dict = {}
+        for i, feature in enumerate(self.features):
+            result_dict[feature] = self.gps[i].kern.input_sensitivity(
+                summarize=False
+            )
         return result_dict
 
     def get_latents(self) -> LatentOutput:
         """Gets the latent space representation of each data point."""
         assert (
-            self.data is not None and self.gp is not None
+            self.data is not None and self.gps is not None
         ), f"GP needs to be fitted with data beforehand by calling <fit>."
 
-        latents = self.gp.X
+        latents = self.gps[0].X
         result_dict = {}
         for i in range(latents.shape[1]):
             result_dict[f"Component_{i}"] = latents[:, i]
@@ -171,22 +211,24 @@ class GPAnalysis:
 
     def save_model(self):
         assert (
-            self.data is not None and self.gp is not None
+            self.data is not None and self.gps is not None
         ), f"GP needs to be fitted with data beforehand by calling <fit>."
-        save_location = f"{MODELS_PATH}/{self.name}.npy"
-        logger.info(f"Saving GP model to {save_location}...")
-        np.save(save_location, self.gp.param_array)
+        for i in range(len(self.gps)):
+            save_location = f"{MODELS_PATH}/{self.name}_{i}.npy"
+            logger.info(f"Saving GP model to {save_location}...")
+            np.save(save_location, self.gps[i].param_array)
 
     def load_model_weights(self):
         assert (
-            self.data is not None and self.gp is not None
+            self.data is not None and self.gps is not None
         ), f"GP needs to be fitted with data beforehand by calling <fit>."
-        load_location = f"{MODELS_PATH}/{self.name}.npy"
-        assert os.path.isfile(
-            load_location
-        ), f"Model weights not found at {load_location}."
-        # load numpy weights from file
-        self.gp.update_model(False)
-        self.gp.initialize_parameter()
-        self.gp[:] = np.load(load_location)
-        self.gp.update_model(True)
+        for i in range(len(self.gps)):
+            load_location = f"{MODELS_PATH}/{self.name}_{i}.npy"
+            assert os.path.isfile(
+                load_location
+            ), f"Model weights not found at {load_location}."
+            # load numpy weights from file
+            self.gps[i].update_model(False)
+            self.gps[i].initialize_parameter()
+            self.gps[i][:] = np.load(load_location)
+            self.gps[i].update_model(True)

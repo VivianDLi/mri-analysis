@@ -2,7 +2,7 @@
 
 ## Literals
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, NewType, Tuple, TypedDict
 
 import numpy as np
@@ -32,7 +32,9 @@ NormalizeType = Literal["zscore", "median"]
 class Dataset:
     data: pd.DataFrame
     average_feature: str = "Region"
-    sort_order: List[str] = ["Feature", "Region", "Subject"]
+    sort_order: List[str] = field(
+        default_factory=lambda: ["Feature", "Region", "Subject"]
+    )
     normalize_type: NormalizeType = "zscore"
 
     def get_data(
@@ -47,9 +49,10 @@ class Dataset:
             "Region" in self.data.columns
         ), "Region column not found in dataset."
         data = self.data.copy()
+        sort_order = self.sort_order.copy()
         if subset is not None:
             logger.info(f"Subsetting data to {subset} random regions...")
-            region_list = self.data["Region"].unique()
+            region_list = data["Region"].unique()
             data = data[
                 data["Region"].isin(
                     np.random.choice(region_list, size=subset, replace=False)
@@ -63,18 +66,38 @@ class Dataset:
             data = self._normalize(data)
         if average:
             logger.info(f"Averaging data across {self.average_feature}...")
+            non_numeric_columns = set(
+                data.select_dtypes(exclude="number").columns
+            ) - set([self.average_feature])
             data = self._average(data)
-        logger.info(f"Sorting data by {self.sort_order}...")
-        data = data.sort_values(by=self.sort_order)
+            # remove missing columns from sort_order
+            to_remove = [
+                col
+                for col in sort_order
+                if col in non_numeric_columns and col != "Feature"
+            ]
+            logger.debug(
+                f"Removing non-numeric columns: {to_remove} from sort order."
+            )
+            for col in to_remove:
+                sort_order.remove(col)
         if flatten:
             logger.info(f"Flattening data...")
             data = pd.melt(
                 data,
-                id_vars=["Region", "Subject"],
+                id_vars=(
+                    ["Region", "Subject"]
+                    if not average
+                    else [self.average_feature]
+                ),
                 value_vars=DATA_FEATURES,
                 var_name="Feature",
                 value_name="Value",
             )
+        elif "Feature" in sort_order:
+            sort_order.remove("Feature")
+        logger.info(f"Sorting data by {sort_order}...")
+        data = data.sort_values(by=sort_order)
         return data
 
     def _average(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -83,21 +106,17 @@ class Dataset:
             self.average_feature in data.columns
         ), f"Average feature: {self.average_feature} not in dataset columns: {data.columns}."
         number_columns = data.select_dtypes(include="number").columns
-        non_number_columns = set(data.columns) - set(number_columns)
-        non_number_columns.add(self.average_feature)
-        base_df = data[non_number_columns]
         average_df = (
             data.groupby(self.average_feature)[number_columns]
             .mean()
             .reset_index()
         )
-        df = base_df.merge(average_df, how="left", on=self.average_feature)
 
         logger.info(
             f"Averaging columns: {number_columns} across {self.average_feature}..."
         )
-        logger.debug(f"Resulting dataframe as columns: {df.columns}.")
-        return df
+        logger.debug(f"Resulting dataframe as columns: {average_df.columns}.")
+        return average_df
 
     def _normalize(self, data: pd.DataFrame) -> pd.DataFrame:
         """Returns the same dataframe normalizing feature column values (CT, SD, MD, ICVF) with their z-scores."""
@@ -153,7 +172,7 @@ class Dataset:
         self.average_feature = average_feature
 
     def set_sort_order(self, sort_order: List[str]) -> None:
-        if set(sort_order) != set(self.data.columns):
+        if not set(sort_order) - set(["Feature"]) <= set(self.data.columns):
             logger.warning(
                 f"Features {set(sort_order) - set(self.data.columns)} are not in the dataset. Ignoring new sort order."
             )
@@ -165,6 +184,7 @@ class Dataset:
 CovarianceOutput = NewType("CovarianceOutput", np.ndarray)
 ComponentOutput = NewType("ComponentOutput", Dict[str, np.array])
 LatentOutput = NewType("LatentOutput", Dict[str, np.array])
+SensitivityOutput = NewType("SensitivityOutput", np.array)
 
 
 class ExplainedVarianceOutput(TypedDict):
@@ -205,6 +225,6 @@ LinearPlotType = Literal[
     "pca_covariance", "pca_variance", "pca_eigenvectors", "pca_latents"
 ]
 
-NonlinearPlotType = Literal["gp_covariance", "gp_latents"]
+NonlinearPlotType = Literal["gp_covariance", "gp_sensitivity", "gp_latents"]
 
 BrainPlotType = Literal["brain_feature", "brain_regression"]

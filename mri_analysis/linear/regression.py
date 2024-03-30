@@ -4,7 +4,7 @@ from typing import List
 import pandas as pd
 import scipy
 
-from mri_analysis.datatypes import RegressionOutput
+from mri_analysis.datatypes import DATA_FEATURES, RegressionOutput
 
 
 class RegressionAnalysis:
@@ -21,8 +21,9 @@ class RegressionAnalysis:
         ), f"PCA needs to be fitted with data beforehand by calling <fit>."
         results = []
         numerical_columns = self.data.select_dtypes(include="number").columns
-        for feat_1 in numerical_columns:
-            for feat_2 in set(numerical_columns) - set([feat_1]):
+        features = set(numerical_columns) & set(DATA_FEATURES)
+        for feat_1 in features:
+            for feat_2 in features - set([feat_1]):
                 # calculate overall regressions
                 slope, intercept, r, _, _ = scipy.stats.linregress(
                     x=self.data[feat_1], y=self.data[feat_2]
@@ -44,8 +45,8 @@ class RegressionAnalysis:
                     names.append(name)
                 results.append(
                     RegressionOutput(
-                        feature_1=feat_1,
-                        feature_2=feat_2,
+                        feat_1=feat_1,
+                        feat_2=feat_2,
                         slope=slope,
                         intercept=intercept,
                         r_squared=r**2,

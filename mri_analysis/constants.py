@@ -27,15 +27,42 @@ if not os.path.exists(PROJECT_PATH / ".env"):
         DATA_PATH = os.environ.get("DATA_PATH")
     else:
         logger.debug("No env var `DATA_PATH` found. Setting default...")
-        DATA_PATH = str(SRC_PATH / "data")
+        DATA_PATH = str(PROJECT_PATH / "data")
         os.environ["DATA_PATH"] = str(DATA_PATH)
+    if os.environ.get("METADATA_PATH") is not None:
+        logger.debug("Found env var `METADATA_PATH`.")
+        METADATA_PATH = os.environ.get("METADATA_PATH")
+    else:
+        logger.debug("No env var `METADATA_PATH` found. Setting default...")
+        METADATA_PATH = str(PROJECT_PATH / "metadata")
+        os.environ["METADATA_PATH"] = str(METADATA_PATH)
+    if os.environ.get("MODELS_PATH") is not None:
+        logger.debug("Found env var `MODELS_PATH`.")
+        RESULTS_PATH = os.environ.get("MODELS_PATH")
+    else:
+        logger.debug("No env var `MODELS_PATH` found. Setting default...")
+        MODELS_PATH = str(PROJECT_PATH / "models")
+        os.environ["MODELS_PATH"] = str(MODELS_PATH)
+    if os.environ.get("RESULTS_PATH") is not None:
+        logger.debug("Found env var `RESULTS_PATH`.")
+        RESULTS_PATH = os.environ.get("RESULTS_PATH")
+    else:
+        logger.debug("No env var `RESULTS_PATH` found. Setting default...")
+        RESULTS_PATH = str(PROJECT_PATH / "results")
+        os.environ["RESULTS_PATH"] = str(RESULTS_PATH)
 else:
     import dotenv  # lazy import to avoid dependency on dotenv
 
     dotenv.load_dotenv(PROJECT_PATH / ".env")
     DATA_PATH = os.environ.get("DATA_PATH")
+    METADATA_PATH = os.environ.get("METADATA_PATH")
+    MODELS_PATH = os.environ.get("MODELS_PATH")
+    RESULTS_PATH = os.environ.get("RESULTS_PATH")
 
 logger.info(f"DATA_PATH: {DATA_PATH}")
+logger.info(f"METADATA_PATH: {METADATA_PATH}")
+logger.info(f"MODELS_PATH: {MODELS_PATH}")
+logger.info(f"RESULTS_PATH: {RESULTS_PATH}")
 # Set default environment paths as fallback if not specified in .env file
 if os.environ.get("ROOT_DIR") is None:
     ROOT_DIR = str(PROJECT_PATH)

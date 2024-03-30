@@ -87,7 +87,7 @@ class BrainPlotter:
                 cmap="viridis",
                 outfile=f"{RESULTS_PATH}/brain/brain_feature_{feat}_{get_time_identifier()}.png",
             )
-        plt.close()
+            plt.close()
 
     def _plot_brain_regression(
         self, regression_data: List[RegressionOutput], **kwargs
@@ -96,31 +96,33 @@ class BrainPlotter:
         for reg_data in regression_data:
             if len(reg_data["region_slopes"]) != 360:
                 logger.warning(
-                    f"Regression data for {reg_data["feat_1"]} x {reg_data["feat_2"]} has {len(reg_data["region_slopes"])} rows, expected 360 for brain plotting."
+                    f"Regression data for {reg_data['feat_1']} x {reg_data['feat_2']} has {len(reg_data['region_slopes'])} rows, expected 360 for brain plotting."
                 )
                 return
             self.plot_brain(
                 reg_data["region_slopes"],
                 parc="HCP",
                 cbar=True,
-                cbartitle=f"{reg_data["feat_1"]} vs. {reg_data["feat_2"]} Slopes",
+                cbartitle=f"{reg_data['feat_1']} vs. {reg_data['feat_2']} Slopes",
                 cmap="viridis",
-                outfile=f"{RESULTS_PATH}/brain/brain_regression_{reg_data["feat_1"]}x{reg_data["feat_2"]}_slope_{get_time_identifier()}.png",
+                outfile=f"{RESULTS_PATH}/brain/brain_regression_{reg_data['feat_1']}x{reg_data['feat_2']}_slope_{get_time_identifier()}.png",
             )
+            plt.close()
             self.plot_brain(
                 reg_data["region_intercepts"],
                 parc="HCP",
                 cbar=True,
-                cbartitle=f"{reg_data["feat_1"]} vs. {reg_data["feat_2"]} Intercepts",
+                cbartitle=f"{reg_data['feat_1']} vs. {reg_data['feat_2']} Intercepts",
                 cmap="viridis",
-                outfile=f"{RESULTS_PATH}/brain/brain_regression_{reg_data["feat_1"]}x{reg_data["feat_2"]}_intercept_{get_time_identifier()}.png",
+                outfile=f"{RESULTS_PATH}/brain/brain_regression_{reg_data['feat_1']}x{reg_data['feat_2']}_intercept_{get_time_identifier()}.png",
             )
+            plt.close()
             self.plot_brain(
                 reg_data["region_r_squared"],
                 parc="HCP",
                 cbar=True,
-                cbartitle=f"{reg_data["feat_1"]} vs. {reg_data["feat_2"]} R^2",
+                cbartitle=f"{reg_data['feat_1']} vs. {reg_data['feat_2']} R^2",
                 cmap="viridis",
-                outfile=f"{RESULTS_PATH}/brain/brain_regression_{reg_data["feat_1"]}x{reg_data["feat_2"]}_r_{get_time_identifier()}.png",
+                outfile=f"{RESULTS_PATH}/brain/brain_regression_{reg_data['feat_1']}x{reg_data['feat_2']}_r_{get_time_identifier()}.png",
             )
-        plt.close()
+            plt.close()

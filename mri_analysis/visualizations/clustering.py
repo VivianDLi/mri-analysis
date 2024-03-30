@@ -1,6 +1,5 @@
 from typing import Dict, List
 from matplotlib import pyplot as plt
-import numpy as np
 import pandas as pd
 import seaborn as sns
 from sklearn.cluster import AgglomerativeClustering
@@ -67,10 +66,14 @@ class ClusterPlotter:
                 if x not in inputs:
                     inputs[x] = set()
                 # check for re-ordered duplicates
-                if y not in inputs or x not in inputs[y]:
+                if y not in inputs:
                     inputs[x].add(y)
+            # prevent empty sets
+            if len(inputs[x]) == 0:
+                del inputs[x]
         # graph all possible combinations of 3-way combinations
-        subfigs = plt.subfigures(nrows=len(inputs), ncols=1)
+        fig = plt.figure(figsize=(15, len(inputs) * 3))
+        subfigs = fig.subfigures(nrows=len(inputs), ncols=1)
         for i, x_feat in enumerate(inputs):
             axs = subfigs[i].subplots(nrows=1, ncols=len(inputs[x_feat]))
             for j, y_feat in enumerate(inputs[x_feat]):
@@ -80,7 +83,7 @@ class ClusterPlotter:
                     y=y_feat,
                     hue="Cluster",
                     palette="mako",
-                    ax=axs[j],
+                    ax=axs[j] if len(inputs[x_feat]) > 1 else axs,
                     **kwargs,
                 )
                 p.set_xlabel(x_feat)
@@ -99,7 +102,7 @@ class ClusterPlotter:
             return
         number_columns = flat_data.select_dtypes(include="number").columns
         non_number_columns = set(flat_data.columns) - set(number_columns)
-        color_indices = flat_data[non_number_columns].copy()
+        color_indices = flat_data[list(non_number_columns)].copy()
         for feat in non_number_columns:
             color = "hls" if feat == "Region" or feat == "Feature" else "mako"
             cmap = sns.color_palette(
@@ -108,7 +111,7 @@ class ClusterPlotter:
             lut = dict(zip(flat_data[feat].unique(), cmap))
             color_indices[feat] = color_indices[feat].map(lut)
         sns.clustermap(
-            flat_data,
+            flat_data[number_columns],
             row_colors=color_indices,
             row_cluster=False,
             col_cluster=False,
@@ -122,7 +125,7 @@ class ClusterPlotter:
 
     def _cluster(self, data: pd.DataFrame) -> pd.DataFrame:
         clusters = AgglomerativeClustering(
-            5, metric="euclidean", linkage="ward", connectivity="none"
+            5, metric="euclidean", linkage="ward", connectivity=None
         ).fit_predict(data[DATA_FEATURES].to_numpy())
         data["Cluster"] = clusters
         return data

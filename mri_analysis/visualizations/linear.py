@@ -97,7 +97,7 @@ class LinearPlotter:
         p.set_yticks(p.get_yticks(), DATA_FEATURES)
         plt.xlabel("")
         plt.ylabel("")
-        plt.suptitle(f"PCA Covariance")
+        plt.suptitle("PCA Covariance")
         plt.savefig(
             f"{RESULTS_PATH}/linear/pca_covariance_{get_time_identifier()}.png"
         )
@@ -123,12 +123,6 @@ class LinearPlotter:
     def _plot_pca_eigenvectors(
         self, component_data: ComponentOutput, **kwargs
     ) -> None:
-        fig, axes = plt.subplots(
-            nrows=2,
-            ncols=len(component_data),
-            sharey="row",
-            figsize=(4 * len(component_data), 12),
-        )
         # get components per feature
         feature_components = {}
         for component_name in component_data:
@@ -138,37 +132,37 @@ class LinearPlotter:
                 feature_components[feature].append(
                     component_data[component_name][i]
                 )
+        fig = plt.figure(figsize=(4 * len(component_data), 12))
+        subfigures = fig.subfigures(nrows=2, ncols=1)
+        c_axs = subfigures[0].subplots(
+            nrows=1, ncols=len(component_data), sharey="row"
+        )
+        f_axs = subfigures[1].subplots(
+            nrows=1, ncols=len(feature_components), sharey="row"
+        )
         # plot components
-        for i, (component_name, features) in component_data.items():
+        for i, (component_name, features) in enumerate(component_data.items()):
             p = sns.barplot(
                 x=DATA_FEATURES,
                 y=features,
-                hue=DATA_FEATURES,
-                ax=axes[0][i],
+                ax=c_axs[i],
                 **kwargs,
             )
             p.set_xlabel("Feature")
             p.set_ylabel(component_name)
-            if i == 0:
-                sns.move_legend(p, "upper left", bbox_to_anchor=(1, 1))
-            else:
-                p.get_legend().remove()
         # plot features
-        for i, (feature_name, components) in feature_components.items():
+        for i, (feature_name, components) in enumerate(
+            feature_components.items()
+        ):
             p = sns.barplot(
                 x=component_data.keys(),
                 y=components,
-                hue=component_data.keys(),
-                ax=axes[1][i],
+                ax=f_axs[i],
                 **kwargs,
             )
             p.set_xlabel("Component")
             p.set_ylabel(feature_name)
-            if i == 0:
-                sns.move_legend(p, "upper left", bbox_to_anchor=(1, 1))
-            else:
-                p.get_legend().remove()
-        fig.suptitle(f"PCA Eigenvectors")
+        fig.suptitle("PCA Eigenvectors")
         plt.savefig(
             f"{RESULTS_PATH}/linear/pca_eigenvectors_{get_time_identifier()}.png"
         )
@@ -182,22 +176,30 @@ class LinearPlotter:
                 if x not in inputs:
                     inputs[x] = set()
                 # check for re-ordered duplicates
-                if y not in inputs or x not in inputs[y]:
+                if y not in inputs:
                     inputs[x].add(y)
+            # prevent empty sets
+            if len(inputs[x]) == 0:
+                del inputs[x]
         # graph all possible combinations of 2-way components
-        subfigs = plt.subfigures(nrows=len(inputs), ncols=1)
+        fig = plt.figure(figsize=(15, len(inputs) * 3))
+        subfigs = fig.subfigures(nrows=len(inputs), ncols=1)
         for i, x_component in enumerate(inputs):
-            axs = subfigs[i].subplots(nrows=1, ncols=len(inputs[x_component]))
+            axs = (
+                subfigs[i].subplots(nrows=1, ncols=len(inputs[x_component]))
+                if len(inputs) > 1
+                else subfigs.subplots(nrows=1, ncols=len(inputs[x_component]))
+            )
             for j, y_component in enumerate(inputs[x_component]):
                 p = sns.scatterplot(
                     x=latent_data[x_component],
                     y=latent_data[y_component],
-                    ax=axs[j],
+                    ax=axs[j] if len(inputs[x_component]) > 1 else axs,
                     **kwargs,
                 )
                 p.set_xlabel(x_component)
                 p.set_ylabel(y_component)
-        plt.suptitle(f"PCA Latents")
+        plt.suptitle("PCA Latents")
         plt.savefig(
             f"{RESULTS_PATH}/linear/pca_latents_{get_time_identifier()}.png"
         )

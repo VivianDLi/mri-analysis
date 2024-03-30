@@ -5,6 +5,7 @@ import pandas as pd
 from sklearn.decomposition import PCA
 
 from mri_analysis.datatypes import (
+    DATA_FEATURES,
     ComponentOutput,
     CovarianceOutput,
     ExplainedVarianceOutput,
@@ -21,9 +22,9 @@ class ComponentAnalysis:
         self.data = data
         # filter out numerical features only
         numerical_columns = self.data.select_dtypes(include="number").columns
-        self.features = numerical_columns
+        self.features = set(numerical_columns) & set(DATA_FEATURES)
         self.pca = PCA(n_components=n_components).fit(
-            self.data[numerical_columns].to_numpy()
+            self.data[list(self.features)]
         )
 
     def get_covariance(self) -> CovarianceOutput:
@@ -53,7 +54,7 @@ class ComponentAnalysis:
 
         components = self.pca.components_
         result_dict = {}
-        for i in range(components.shape[1]):
+        for i in range(components.shape[0]):
             result_dict[f"Component_{i}"] = components[i, :]
         return result_dict
 
@@ -63,7 +64,7 @@ class ComponentAnalysis:
             self.data is not None and self.pca is not None
         ), f"PCA needs to be fitted with data beforehand by calling <fit>."
 
-        latents = self.pca.transform(self.data)
+        latents = self.pca.transform(self.data[list(self.features)])
         result_dict = {}
         for i in range(latents.shape[1]):
             result_dict[f"Component_{i}"] = latents[:, i]
