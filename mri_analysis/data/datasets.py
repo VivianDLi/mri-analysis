@@ -33,7 +33,9 @@ def load_dataset() -> Dataset:
     # load von Economo labels
     if os.path.isfile(f"{METADATA_PATH}/labels.csv"):
         logger.info(f"Found von Economo labels. Adding to existing data.")
-        labels_df = pd.read_csv(f"{METADATA_PATH}/labels.csv", header=0)
+        labels_df = pd.read_csv(
+            f"{METADATA_PATH}/labels.csv", header=0, dtype=str
+        )
         # combine data with labels
         data = data.merge(labels_df, how="left", on="Region")
     # load subject demographics

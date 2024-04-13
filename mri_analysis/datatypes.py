@@ -33,7 +33,7 @@ class Dataset:
     data: pd.DataFrame
     average_feature: str = "Region"
     sort_order: List[str] = field(
-        default_factory=lambda: ["Feature", "Region", "Subject"]
+        default_factory=lambda: ["Feature", "Labels", "Region", "Subject"]
     )
     normalize_type: NormalizeType = "zscore"
 
@@ -85,11 +85,7 @@ class Dataset:
             logger.info(f"Flattening data...")
             data = pd.melt(
                 data,
-                id_vars=(
-                    ["Region", "Subject"]
-                    if not average
-                    else [self.average_feature]
-                ),
+                id_vars=["Region", "Labels", "Subject"],
                 value_vars=DATA_FEATURES,
                 var_name="Feature",
                 value_name="Value",
@@ -106,17 +102,27 @@ class Dataset:
             self.average_feature in data.columns
         ), f"Average feature: {self.average_feature} not in dataset columns: {data.columns}."
         number_columns = data.select_dtypes(include="number").columns
+        non_number_columns = list(data.select_dtypes(exclude="number").columns)
+        # remove average feature from non_number_columns
+        if self.average_feature in non_number_columns:
+            non_number_columns.remove(self.average_feature)
         average_df = (
             data.groupby(self.average_feature)[number_columns]
             .mean()
             .reset_index()
         )
+        label_df = (
+            data.groupby(self.average_feature)[non_number_columns]
+            .first()
+            .reset_index()
+        )
+        df = average_df.merge(label_df, on=self.average_feature, how="left")
 
         logger.info(
             f"Averaging columns: {number_columns} across {self.average_feature}..."
         )
         logger.debug(f"Resulting dataframe as columns: {average_df.columns}.")
-        return average_df
+        return df
 
     def _normalize(self, data: pd.DataFrame) -> pd.DataFrame:
         """Returns the same dataframe normalizing feature column values (CT, SD, MD, ICVF) with their z-scores."""
@@ -204,7 +210,7 @@ class RegressionOutput(TypedDict):
     region_names: List[str]
 
 
-GPType = Literal["Base", "Sparse", "Bayesian"]
+GPType = Literal["Base", "Bayesian"]
 
 
 ## Plotting Types

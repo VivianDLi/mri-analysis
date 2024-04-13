@@ -45,6 +45,7 @@ class NonlinearPlotter:
         covariance_labels: pd.DataFrame = None,
         sensitivity_data: Dict[str, SensitivityOutput] = None,
         latent_data: LatentOutput = None,
+        name: str = None,
     ) -> None:
         logger.debug(f"Creating linear plots {self.plots}...")
         for plot, config in self.plots.items():
@@ -70,12 +71,14 @@ class NonlinearPlotter:
             match plot:
                 case "gp_covariance":
                     self._plot_gp_covariance(
-                        covariance_data, covariance_labels, **config
+                        covariance_data, covariance_labels, name=name, **config
                     )
                 case "gp_sensitivity":
-                    self._plot_gp_sensitivity(sensitivity_data, **config)
+                    self._plot_gp_sensitivity(
+                        sensitivity_data, name=name, **config
+                    )
                 case "gp_latents":
-                    self._plot_gp_latents(latent_data, **config)
+                    self._plot_gp_latents(latent_data, name=name, **config)
                 case _:
                     logger.warning(
                         f"Plot {plot} not found in available plots."
@@ -86,6 +89,7 @@ class NonlinearPlotter:
         self,
         covariance_data: Dict[str, CovarianceOutput],
         covariance_labels: pd.DataFrame,
+        name: str = None,
         **kwargs,
     ) -> None:
         # initialize brain plotting
@@ -112,12 +116,9 @@ class NonlinearPlotter:
             color_indices[label] = color_indices[label].map(lut)
         for feature, covariance in covariance_data.items():
             # plot covariance matrix
+            df_covariance = pd.DataFrame(covariance)
             sns.clustermap(
-                pd.DataFrame(
-                    covariance,
-                    columns=covariance_labels,
-                    index=covariance_labels,
-                ),
+                df_covariance,
                 row_colors=color_indices,
                 col_colors=color_indices,
                 row_cluster=False,
@@ -127,7 +128,7 @@ class NonlinearPlotter:
             )
             plt.suptitle(f"GP Covariance Matrix for {feature}")
             plt.savefig(
-                f"{RESULTS_PATH}/nonlinear/gp_correlation_map_{feature}_{get_time_identifier()}.png"
+                f"{RESULTS_PATH}/nonlinear/{'' if name is None else name}_gp_correlation_map_{feature}_{get_time_identifier()}.png"
             )
             plt.close()
             # plot corresponding colors on brain map
@@ -146,35 +147,43 @@ class NonlinearPlotter:
                         if len(color_indices["Region"].unique()) <= 20
                         else "mako"
                     ),
-                    outfile=f"{RESULTS_PATH}/nonlinear/gp_correlation_regions_{feature}_{get_time_identifier()}.png",
+                    outfile=f"{RESULTS_PATH}/nonlinear/{'' if name is None else name}_gp_correlation_regions_{feature}_{get_time_identifier()}.png",
                     categorical=True,
                 )
                 plt.close()
 
     def _plot_gp_sensitivity(
-        self, sensitivity_data: Dict[str, SensitivityOutput], **kwargs
+        self,
+        sensitivity_data: Dict[str, SensitivityOutput],
+        name: str = None,
+        **kwargs,
     ) -> None:
-        fig, axes = plt.subplots(nrows=1, ncols=len(sensitivity_data))
-        for i, (feature, sensitivity) in enumerate(sensitivity_data.items()):
-            component_names = [
-                f"Component_{i+1}" for i in range(len(sensitivity))
-            ]
-            p = sns.barplot(
-                x=component_names,
-                y=sensitivity,
-                ax=axes[i] if len(sensitivity_data) > 1 else axes,
-                **kwargs,
-            )
-            p.set_xlabel("Component")
-            p.set_ylabel("Sensitivity")
-            p.set_title(f"GP Sensitivity for {feature}")
-        fig.suptitle("GP Sensitivity")
+        data_dict = {"Component": [], "Sensitivity": [], "Feature": []}
+        for feature, sensitivity in sensitivity_data.items():
+            num_items = len(sensitivity)
+            data_dict["Feature"].extend([feature] * num_items)
+            data_dict["Component"].extend([i + 1 for i in range(num_items)])
+            data_dict["Sensitivity"].extend(sensitivity)
+        data = pd.DataFrame(data=data_dict)
+        print(data)
+        p = sns.barplot(
+            data,
+            x="Component",
+            y="Sensitivity",
+            hue="Feature",
+            **kwargs,
+        )
+        p.set_xlabel("Component")
+        p.set_ylabel("Sensitivity")
+        p.set_title(f"GP Sensitivity")
         plt.savefig(
-            f"{RESULTS_PATH}/nonlinear/gp_sensitivity_{get_time_identifier()}.png"
+            f"{RESULTS_PATH}/nonlinear/{'' if name is None else name}_gp_sensitivity_{get_time_identifier()}.png"
         )
         plt.close()
 
-    def _plot_gp_latents(self, latent_data: LatentOutput, **kwargs) -> None:
+    def _plot_gp_latents(
+        self, latent_data: LatentOutput, name: str = None, **kwargs
+    ) -> None:
         # get all possible combinations of components
         inputs = {}
         for x in latent_data.keys():
@@ -207,6 +216,6 @@ class NonlinearPlotter:
                 p.set_ylabel(y_component)
         plt.suptitle("PCA Latents")
         plt.savefig(
-            f"{RESULTS_PATH}/linear/pca_latents_{get_time_identifier()}.png"
+            f"{RESULTS_PATH}/nonlinear/{'' if name is None else name}_gp_latents_{get_time_identifier()}.png"
         )
         plt.close()

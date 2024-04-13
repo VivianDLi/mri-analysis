@@ -50,7 +50,9 @@ class ClusterPlotter:
                 case "cluster_scatter":
                     self._plot_cluster_scatter(data, **config)
                 case "cluster_map":
-                    self._plot_cluster_map(flat_data, **config)
+                    self._plot_cluster_map(
+                        data=data, flat_data=flat_data, **config
+                    )
                 case _:
                     logger.warning(
                         f"Plot {plot} not found in available plots."
@@ -94,34 +96,71 @@ class ClusterPlotter:
         )
         plt.close()
 
-    def _plot_cluster_map(self, flat_data: pd.DataFrame, **kwargs) -> None:
-        if "Value" not in flat_data.columns:
-            logger.warning(
-                f"Value column not found in dataset columns: {flat_data.columns}."
+    def _plot_cluster_map(
+        self,
+        data: pd.DataFrame = None,
+        flat_data: pd.DataFrame = None,
+        **kwargs,
+    ) -> None:
+        if data is not None:
+            if not set(DATA_FEATURES) <= set(data.columns):
+                logger.warning(
+                    f"{DATA_FEATURES} columns not found in dataset columns: {data.columns}."
+                )
+                return
+            number_columns = data.select_dtypes(include="number").columns
+            non_number_columns = set(data.columns) - set(number_columns)
+            feature_columns = set(number_columns) & set(DATA_FEATURES)
+            color_indices = data[list(non_number_columns)].copy()
+            for feat in non_number_columns:
+                color = "hls" if data[feat].unique().size <= 20 else "mako"
+                cmap = sns.color_palette(
+                    color, n_colors=len(data[feat].unique())
+                )
+                lut = dict(zip(data[feat].unique(), cmap))
+                color_indices[feat] = color_indices[feat].map(lut)
+            sns.clustermap(
+                data[list(feature_columns)],
+                row_colors=color_indices,
+                row_cluster=False,
+                col_cluster=False,
+                cmap="icefire",
+                **kwargs,
             )
-            return
-        number_columns = flat_data.select_dtypes(include="number").columns
-        non_number_columns = set(flat_data.columns) - set(number_columns)
-        color_indices = flat_data[list(non_number_columns)].copy()
-        for feat in non_number_columns:
-            color = "hls" if feat == "Region" or feat == "Feature" else "mako"
-            cmap = sns.color_palette(
-                color, n_colors=len(flat_data[feat].unique())
+            plt.suptitle("Population-Wide Clustered Heatmaps")
+            plt.savefig(
+                f"{RESULTS_PATH}/clustering/cluster_map_{get_time_identifier()}.png"
             )
-            lut = dict(zip(flat_data[feat].unique(), cmap))
-            color_indices[feat] = color_indices[feat].map(lut)
-        sns.clustermap(
-            flat_data[number_columns],
-            row_colors=color_indices,
-            row_cluster=False,
-            col_cluster=False,
-            cmap="icefire",
-        )
-        plt.suptitle("Population-Wide Clustered Heatmaps")
-        plt.savefig(
-            f"{RESULTS_PATH}/clustering/cluster_map_{get_time_identifier()}.png"
-        )
-        plt.close()
+            plt.close()
+        if flat_data is not None:
+            if "Value" not in flat_data.columns:
+                logger.warning(
+                    f"Value column not found in dataset columns: {flat_data.columns}."
+                )
+                return
+            number_columns = flat_data.select_dtypes(include="number").columns
+            non_number_columns = set(flat_data.columns) - set(number_columns)
+            color_indices = flat_data[list(non_number_columns)].copy()
+            for feat in non_number_columns:
+                color = "hls" if data[feat].unique().size <= 20 else "mako"
+                cmap = sns.color_palette(
+                    color, n_colors=len(flat_data[feat].unique())
+                )
+                lut = dict(zip(flat_data[feat].unique(), cmap))
+                color_indices[feat] = color_indices[feat].map(lut)
+            sns.clustermap(
+                flat_data[number_columns],
+                row_colors=color_indices,
+                row_cluster=False,
+                col_cluster=False,
+                cmap="icefire",
+                **kwargs,
+            )
+            plt.suptitle("Population-Wide Clustered Heatmaps")
+            plt.savefig(
+                f"{RESULTS_PATH}/clustering/cluster_flat_map_{get_time_identifier()}.png"
+            )
+            plt.close()
 
     def _cluster(self, data: pd.DataFrame) -> pd.DataFrame:
         clusters = AgglomerativeClustering(

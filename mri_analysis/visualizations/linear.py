@@ -42,6 +42,7 @@ class LinearPlotter:
         variance_data: List[ExplainedVarianceOutput] = None,
         component_data: ComponentOutput = None,
         latent_data: LatentOutput = None,
+        name: str = None,
     ) -> None:
         logger.debug(f"Creating linear plots {self.plots}...")
         for plot, config in self.plots.items():
@@ -69,13 +70,13 @@ class LinearPlotter:
             # plot
             match plot:
                 case "pca_covariance":
-                    self._plot_pca_covariance(covariance_data, **config)
+                    self._plot_pca_covariance(covariance_data, name, **config)
                 case "pca_variance":
-                    self._plot_pca_variance(variance_data, **config)
+                    self._plot_pca_variance(variance_data, name, **config)
                 case "pca_eigenvectors":
-                    self._plot_pca_eigenvectors(component_data, **config)
+                    self._plot_pca_eigenvectors(component_data, name, **config)
                 case "pca_latents":
-                    self._plot_pca_latents(latent_data, **config)
+                    self._plot_pca_latents(latent_data, name, **config)
                 case _:
                     logger.warning(
                         f"Plot {plot} not found in available plots."
@@ -83,7 +84,7 @@ class LinearPlotter:
                     continue
 
     def _plot_pca_covariance(
-        self, covariance_data: CovarianceOutput, **kwargs
+        self, covariance_data: CovarianceOutput, name: str = None, **kwargs
     ) -> None:
         p = sns.heatmap(
             data=covariance_data,
@@ -99,12 +100,15 @@ class LinearPlotter:
         plt.ylabel("")
         plt.suptitle("PCA Covariance")
         plt.savefig(
-            f"{RESULTS_PATH}/linear/pca_covariance_{get_time_identifier()}.png"
+            f"{RESULTS_PATH}/linear/{'' if name is None else name}_pca_covariance_{get_time_identifier()}.png"
         )
         plt.close()
 
     def _plot_pca_variance(
-        self, variance_data: List[ExplainedVarianceOutput], **kwargs
+        self,
+        variance_data: List[ExplainedVarianceOutput],
+        name: str = None,
+        **kwargs,
     ) -> None:
         variances = []
         num_components = []
@@ -116,12 +120,12 @@ class LinearPlotter:
         plt.ylabel("Percentage of Explained Variance")
         plt.title("PCA Explained Variance")
         plt.savefig(
-            f"{RESULTS_PATH}/linear/pca_variance_{get_time_identifier()}.png"
+            f"{RESULTS_PATH}/linear/{'' if name is None else name}_pca_variance_{get_time_identifier()}.png"
         )
         plt.close()
 
     def _plot_pca_eigenvectors(
-        self, component_data: ComponentOutput, **kwargs
+        self, component_data: ComponentOutput, name: str = None, **kwargs
     ) -> None:
         # get components per feature
         feature_components = {}
@@ -149,7 +153,7 @@ class LinearPlotter:
                 **kwargs,
             )
             p.set_xlabel("Feature")
-            p.set_ylabel(component_name)
+            p.set_title(component_name)
         # plot features
         for i, (feature_name, components) in enumerate(
             feature_components.items()
@@ -161,14 +165,16 @@ class LinearPlotter:
                 **kwargs,
             )
             p.set_xlabel("Component")
-            p.set_ylabel(feature_name)
+            p.set_title(feature_name)
         fig.suptitle("PCA Eigenvectors")
         plt.savefig(
-            f"{RESULTS_PATH}/linear/pca_eigenvectors_{get_time_identifier()}.png"
+            f"{RESULTS_PATH}/linear/{'' if name is None else name}_pca_eigenvectors_{get_time_identifier()}.png"
         )
         plt.close()
 
-    def _plot_pca_latents(self, latent_data: LatentOutput, **kwargs) -> None:
+    def _plot_pca_latents(
+        self, latent_data: LatentOutput, name: str = None, **kwargs
+    ) -> None:
         # get all possible combinations of components
         inputs = {}
         for x in latent_data.keys():
@@ -201,6 +207,6 @@ class LinearPlotter:
                 p.set_ylabel(y_component)
         plt.suptitle("PCA Latents")
         plt.savefig(
-            f"{RESULTS_PATH}/linear/pca_latents_{get_time_identifier()}.png"
+            f"{RESULTS_PATH}/linear/{'' if name is None else name}_pca_latents_{get_time_identifier()}.png"
         )
         plt.close()
