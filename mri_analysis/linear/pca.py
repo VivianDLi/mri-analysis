@@ -1,5 +1,6 @@
 """Computes PCA for a dataset and returns it in an interactible form."""
 
+from typing import List
 import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
@@ -17,12 +18,17 @@ class ComponentAnalysis:
     data: pd.DataFrame = None
     pca: PCA = None
 
-    def fit(self, data: pd.DataFrame, n_components: int) -> None:
+    def fit(
+        self,
+        data: pd.DataFrame,
+        n_components: int,
+        features: List[str] = DATA_FEATURES,
+    ) -> None:
         """Fits the model to some data. Required before calling any other methods."""
         self.data = data
         # filter out numerical features only
         numerical_columns = self.data.select_dtypes(include="number").columns
-        self.features = set(numerical_columns) & set(DATA_FEATURES)
+        self.features = set(numerical_columns) & set(features)
         self.pca = PCA(n_components=n_components).fit(
             self.data[list(self.features)]
         )

@@ -32,6 +32,7 @@ NormalizeType = Literal["zscore", "median"]
 class Dataset:
     data: pd.DataFrame
     average_feature: str = "Region"
+    features: List[str] = field(default_factory=lambda: DATA_FEATURES)
     sort_order: List[str] = field(
         default_factory=lambda: ["Feature", "Labels", "Region", "Subject"]
     )
@@ -44,6 +45,7 @@ class Dataset:
         normalize: bool = True,
         remove_outliers: bool = False,
         flatten: bool = False,
+        pivot: bool = False,
     ) -> pd.DataFrame:
         assert (
             "Region" in self.data.columns
@@ -74,7 +76,9 @@ class Dataset:
             to_remove = [
                 col
                 for col in sort_order
-                if col in non_numeric_columns and col != "Feature"
+                if col in non_numeric_columns
+                and col != "Feature"
+                and col != "Labels"
             ]
             logger.debug(
                 f"Removing non-numeric columns: {to_remove} from sort order."
@@ -86,12 +90,27 @@ class Dataset:
             data = pd.melt(
                 data,
                 id_vars=["Region", "Labels", "Subject"],
-                value_vars=DATA_FEATURES,
+                value_vars=self.features,
                 var_name="Feature",
                 value_name="Value",
             )
         elif "Feature" in sort_order:
             sort_order.remove("Feature")
+        if pivot:
+            logger.info(f"Pivoting data...")
+            data = data.pivot_table(
+                values=self.features,
+                index=[
+                    feat
+                    for feat in ["Region", "Labels"]
+                    if feat in data.columns
+                ],
+                columns="Subject",
+            )
+            if "Subject" in sort_order:
+                sort_order.remove("Subject")
+        # filter for available columns
+        sort_order = [col for col in sort_order if col in data.columns]
         logger.info(f"Sorting data by {sort_order}...")
         data = data.sort_values(by=sort_order)
         return data
@@ -127,20 +146,20 @@ class Dataset:
     def _normalize(self, data: pd.DataFrame) -> pd.DataFrame:
         """Returns the same dataframe normalizing feature column values (CT, SD, MD, ICVF) with their z-scores."""
         assert all(
-            feat in data.columns for feat in DATA_FEATURES
-        ), f"Features {DATA_FEATURES} not found in dataset columns: {data.columns}."
+            feat in data.columns for feat in self.features
+        ), f"Features {self.features} not found in dataset columns: {data.columns}."
         match self.normalize_type:
             case "zscore":
                 logger.info("Normalizing data using z-scores...")
                 # Uses a normal z-score using the mean and variance
-                for feature in DATA_FEATURES:
+                for feature in self.features:
                     data[feature] = zscore(data[feature])
             case "median":
                 logger.info(
                     "Normalizing data using median absolute deviation (MAD)..."
                 )
                 # Uses the modified z-score from (https://www.itl.nist.gov/div898/handbook/eda/section3/eda35h.htm) using medians
-                for feature in DATA_FEATURES:
+                for feature in self.features:
                     data[feature] = (
                         0.6745
                         * (data[feature] - np.median(data[feature]))
@@ -150,15 +169,15 @@ class Dataset:
                 logger.warning(
                     f"Unrecognized normalization algorithm: {self.normalize_type}. Using z-score instead."
                 )
-                for feature in DATA_FEATURES:
+                for feature in self.features:
                     data[feature] = zscore(data[feature])
         return data
 
     def _remove_outliers(self, data: pd.DataFrame) -> pd.DataFrame:
         """Adds an additional two outlier columns to mark population-wide outliers per feature"""
         assert all(
-            feat in data.columns for feat in DATA_FEATURES
-        ), f"Features {DATA_FEATURES} not found in dataset columns: {data.columns}."
+            feat in data.columns for feat in self.features
+        ), f"Features {self.features} not found in dataset columns: {data.columns}."
         # find outliers for the population-wide feature distribution
         data = self.normalize(data)
         data = data[
@@ -211,7 +230,7 @@ class RegressionOutput(TypedDict):
 
 
 GPType = Literal["Base", "Bayesian"]
-
+DataProcessingType = Literal["none", "expand"]
 
 ## Plotting Types
 PlotConfig = NewType("PlotConfig", Dict[str, Any])

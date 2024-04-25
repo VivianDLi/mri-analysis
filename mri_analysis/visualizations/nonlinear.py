@@ -2,17 +2,14 @@
 
 from typing import Dict, List
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
 
 from mri_analysis.constants import BRAINPLOT_PATH, RESULTS_PATH
 from mri_analysis.datatypes import (
-    DATA_FEATURES,
-    ComponentOutput,
     CovarianceOutput,
-    ExplainedVarianceOutput,
     LatentOutput,
-    LinearPlotType,
     NonlinearPlotType,
     PlotConfig,
     SensitivityOutput,
@@ -47,7 +44,7 @@ class NonlinearPlotter:
         latent_data: LatentOutput = None,
         name: str = None,
     ) -> None:
-        logger.debug(f"Creating linear plots {self.plots}...")
+        logger.debug(f"Creating nonlinear plots {self.plots}...")
         for plot, config in self.plots.items():
             # check for correct dataset
             if "covariance" in plot and (
@@ -160,12 +157,13 @@ class NonlinearPlotter:
     ) -> None:
         data_dict = {"Component": [], "Sensitivity": [], "Feature": []}
         for feature, sensitivity in sensitivity_data.items():
-            num_items = len(sensitivity)
+            num_items = len(sensitivity.flatten())
             data_dict["Feature"].extend([feature] * num_items)
             data_dict["Component"].extend([i + 1 for i in range(num_items)])
-            data_dict["Sensitivity"].extend(sensitivity)
+            data_dict["Sensitivity"].extend(
+                list(sensitivity.flatten() / np.max(sensitivity.flatten()))
+            )
         data = pd.DataFrame(data=data_dict)
-        print(data)
         p = sns.barplot(
             data,
             x="Component",

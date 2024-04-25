@@ -137,7 +137,7 @@ class DistributionPlotter:
             if len(inputs[x]) == 0:
                 del inputs[x]
         # graph all possible combinations of 3-way combinations
-        fig = plt.figure(figsize=(15, len(inputs) * 3))
+        fig = plt.figure(figsize=(15, len(inputs) * 5))
         subfigs = fig.subfigures(nrows=len(inputs), ncols=1)
         for i, x_feat in enumerate(inputs):
             axs = subfigs[i].subplots(
