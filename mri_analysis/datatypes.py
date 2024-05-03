@@ -45,7 +45,7 @@ class Dataset:
         normalize: bool = True,
         remove_outliers: bool = False,
         flatten: bool = False,
-        pivot: bool = False,
+        pivot: bool = "none",
     ) -> pd.DataFrame:
         assert (
             "Region" in self.data.columns
@@ -96,19 +96,33 @@ class Dataset:
             )
         elif "Feature" in sort_order:
             sort_order.remove("Feature")
-        if pivot:
+        if pivot != "none":
             logger.info(f"Pivoting data...")
-            data = data.pivot_table(
-                values=self.features,
-                index=[
-                    feat
-                    for feat in ["Region", "Labels"]
-                    if feat in data.columns
-                ],
-                columns="Subject",
-            )
-            if "Subject" in sort_order:
-                sort_order.remove("Subject")
+            match pivot:
+                case "subject":
+                    data = data.pivot_table(
+                        values=self.features,
+                        index=[
+                            feat
+                            for feat in ["Region", "Labels"]
+                            if feat in data.columns
+                        ],
+                        columns="Subject",
+                    )
+                    if "Subject" in sort_order:
+                        sort_order.remove("Subject")
+                case "label":
+                    data = data.pivot_table(
+                        values=self.features,
+                        index="Subject",
+                        columns=["Labels", "Region"],
+                    )
+                    if "Labels" in sort_order:
+                        sort_order.remove("Labels")
+                    if "Region" in sort_order:
+                        sort_order.remove("Region")
+                case _:
+                    logger.warning(f"Unrecognized pivot type: {pivot}.")
         # filter for available columns
         sort_order = [col for col in sort_order if col in data.columns]
         logger.info(f"Sorting data by {sort_order}...")
@@ -250,6 +264,8 @@ LinearPlotType = Literal[
     "pca_covariance", "pca_variance", "pca_eigenvectors", "pca_latents"
 ]
 
-NonlinearPlotType = Literal["gp_covariance", "gp_sensitivity", "gp_latents"]
+NonlinearPlotType = Literal[
+    "gp_covariance", "gp_covariance_brain", "gp_sensitivity", "gp_latents"
+]
 
 BrainPlotType = Literal["brain_feature", "brain_regression"]

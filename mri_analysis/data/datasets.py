@@ -40,6 +40,7 @@ def load_dataset() -> Dataset:
         labels_df = pd.read_csv(
             f"{METADATA_PATH}/labels.csv", header=0, dtype=str
         )
+        labels_df["Labels"] = "L_" + labels_df["Labels"]
         # combine data with labels
         data = data.merge(labels_df, how="left", on="Region")
     # load subject demographics

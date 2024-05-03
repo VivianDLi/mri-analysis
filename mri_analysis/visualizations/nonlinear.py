@@ -70,6 +70,10 @@ class NonlinearPlotter:
                     self._plot_gp_covariance(
                         covariance_data, covariance_labels, name=name, **config
                     )
+                case "gp_covariance_brain":
+                    self._plot_gp_covariance_brain(
+                        covariance_data, covariance_labels, name=name, **config
+                    )
                 case "gp_sensitivity":
                     self._plot_gp_sensitivity(
                         sensitivity_data, name=name, **config
@@ -148,6 +152,43 @@ class NonlinearPlotter:
                     categorical=True,
                 )
                 plt.close()
+
+    def _plot_gp_covariance_brain(
+        self,
+        covariance_data: Dict[str, CovarianceOutput],
+        covariance_labels: pd.DataFrame,
+        name: str = None,
+        **kwargs,
+    ) -> None:
+        assert all(
+            [
+                len(covariance_data[feature]) == 360
+                for feature in covariance_data
+            ]
+        ), "Covariance matrices must be 360x360 (i.e., regions only)."
+        assert (
+            "Region" in covariance_labels.columns
+        ), "Region column not found."
+        # initialize brain plotting
+        import sys
+
+        sys.path.insert(1, BRAINPLOT_PATH)
+        from PlotBrains import plot_brain
+
+        for feature, covariance in covariance_data.items():
+            # plot averaged covariance on brain
+            mean_covariance = np.mean(covariance, axis=0)
+            sorted_indices = covariance_labels["Region"].to_numpy().argsort()
+            mean_covariance = mean_covariance[sorted_indices]
+
+            plot_brain(
+                mean_covariance,
+                parc="HCP",
+                cbar=True,
+                cbartitle=f"{feature} Average Covariance",
+                outfile=f"{RESULTS_PATH}/nonlinear/{'' if name is None else name}_correlation_brain_{feature}_{get_time_identifier()}.png",
+            )
+            plt.close()
 
     def _plot_gp_sensitivity(
         self,
