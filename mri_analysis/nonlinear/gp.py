@@ -16,6 +16,8 @@ from mri_analysis.datatypes import (
     DATA_FEATURES,
     GPType,
     DataProcessingType,
+    InducedInitializationType,
+    LatentInitializationType,
     CovarianceOutput,
     LatentOutput,
     SensitivityOutput,
@@ -73,18 +75,28 @@ class GPAnalysis:
         kernels: Union[Kern, List[Kern]],
         gp_type: GPType = "GP",
         data_processing: DataProcessingType = "none",
+        latent_initialization: LatentInitializationType = "pca",
+        induced_initialization: InducedInitializationType = "permute",
         multi_dimensional: bool = False,
         name: str = None,
         n_inducing: int = 25,
+        n_restarts: int = 10,
+        burst_optimization: bool = False,
+        n_optimization_iters: int = 5e4,
         use_mrd: bool = True,
     ):
         self.kernels = kernels if type(kernels) == list else kernels
         self.gp_type = gp_type
         self.data_processing = data_processing
+        self.latent_initialization = latent_initialization
+        self.induced_initialization = induced_initialization
         self.multi_dimensional = multi_dimensional
         self.name = name
         # gp parameters
         self.n_inducing = n_inducing
+        self.n_restarts = n_restarts
+        self.burst_optimization = burst_optimization
+        self.n_optimization_iters = n_optimization_iters
         self.use_mrd = use_mrd
 
     def fit(
@@ -144,26 +156,51 @@ class GPAnalysis:
                 logger.warning(
                     "Data processing type not recognized. Using none."
                 )
+        # initialize latent space
+        Y = np.hstack(Y_list)
+        match self.latent_initialization:
+            case "pca":
+                X, _ = initialize_latent("PCA", n_components, Y)
+            case "single":
+                pass
+            case "random":
+                X = np.random.randn(Y.shape[0], n_components)
+            case "data":
+                X = Y.copy() * np.random.randn(Y.shape[1], n_components)
+            case _:
+                logger.warning(
+                    f"Unrecognized latent initialization type: {self.latent_initialization}. Using PCA."
+                )
+                X, _ = initialize_latent("PCA", n_components, Y)
+        X -= X.mean()
+        X /= X.std()
+        # initialize inducing points
+        match self.induced_initialization:
+            case "permute":
+                Z = np.random.permutation(X.copy())[: self.n_inducing]
+            case "random":
+                Z = np.random.randn(self.n_inducing, n_components) * X.var()
+            case _:
+                logger.warning(
+                    f"Unrecognized induced initialization type: {self.induced_initialization}. Using permute."
+                )
+                Z = np.random.permutation(X.copy())[: self.n_inducing]
         ## setup MRD model
         if self.use_mrd:
             logger.info("Using MRD model...")
             self.model = MRD(
                 Y_list,
                 n_components,
+                X=X,
+                Z=Z,
                 num_inducing=self.n_inducing,
                 kernel=self.kernels,
                 Ynames=self.features,
                 name=self.name,
             )
-
         ## setup single GP model
         else:
             logger.info("Using GP-LVM model...")
-            Y = np.hstack(Y_list)
-            self.features = ["All"]
-            # initialize latent space
-            X, _ = initialize_latent("PCA", n_components, Y)
-            Z = np.random.permutation(X.copy())[: self.n_inducing]
             # set noise as 1% of variance in data
             likelihood_variance = np.var(Y) * 0.01
             likelihood = Gaussian(variance=likelihood_variance)
@@ -184,7 +221,52 @@ class GPAnalysis:
             )
 
         if optimize:
-            self.model.optimize("bfgs", messages=1, max_iters=5e4)
+            self.fix_model()
+            self.optimize_model(gtol=0.5)
+            self.unfix_model()
+            self.optimize_model(gtol=0.5)
+
+    def fix_model(self):
+        self.model.kern.fix()
+
+    def unfix_model(self):
+        self.model.unfix()
+        self.model.kern.constrain_positive()
+
+    def optimize_model(self, gtol: float = None):
+        if self.burst_optimization:
+            for _ in range(self.n_restarts):
+                (
+                    self.model.optimize(
+                        "bfgs",
+                        messages=1,
+                        max_iters=100,
+                        gtol=gtol,
+                        clear_after_finish=True,
+                    )
+                    if gtol is not None
+                    else self.model.optimize(
+                        "bfgs",
+                        messages=1,
+                        max_iters=100,
+                        clear_after_finish=True,
+                    )
+                )
+        else:
+            (
+                self.model.optimize(
+                    "bfgs",
+                    messages=1,
+                    max_iters=self.n_optimization_iters,
+                    gtol=gtol,
+                )
+                if gtol is not None
+                else self.model.optimize(
+                    "bfgs",
+                    messages=1,
+                    max_iters=self.n_optimization_iters,
+                )
+            )
 
     def get_covariance(
         self,

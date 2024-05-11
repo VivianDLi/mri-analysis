@@ -63,155 +63,94 @@ if __name__ == "__main__":
     logger.info("Creating analyzers...")
     n_components = 10
 
-    # normal data
-    # logger.info("Fitting GP...")
-    # rbf_kernel = (
-    #     RBF(n_components, ARD=True)
-    #     + Linear(n_components)
-    #     + White(n_components)
-    # )
-    # base_gp = GPAnalysis(
-    #     gp_type="Bayesian",
-    #     kernels=rbf_kernel,
-    #     use_mrd=False,
-    #     name="ct_slrbf_bgp",
-    # )
-    # base_gp.fit(ct_data, n_components)
-    # base_gp.save_model()
-    # logger.info(base_gp.model)
-    # logger.info(base_gp.model.kern.rbf.lengthscale)
-
-    # base_gp.model.kern.plot_ARD()
-    # plt.savefig(
-    #     f"{RESULTS_PATH}/nonlinear/ct_lrbf_gp_ard_{get_time_identifier()}.png"
-    # )
-    # plt.close()
-    # base_gp.model.plot_latent()
-    # plt.savefig(
-    #     f"{RESULTS_PATH}/nonlinear/ct_lrbf_gp_latent_{get_time_identifier()}.png"
-    # )
-    # plt.close()
-
     # expanded data
-    # logger.info("Fitting expanded GP...")
-    # rbf_kernel = (
-    #     RBF(n_components, ARD=True)
-    #     + Linear(n_components)
-    #     + White(n_components)
-    # )
-    # expand_gp = GPAnalysis(
-    #     gp_type="Bayesian",
-    #     kernels=rbf_kernel,
-    #     data_processing="expand",
-    #     use_mrd=False,
-    #     name="ct_expand_slrbf_bgp",
-    # )
-    # expand_gp.fit(subject_data, n_components, features=["CT"])
-    # expand_gp.save_model()
-    # logger.info(expand_gp.model)
-    # logger.info(expand_gp.model.kern.rbf.lengthscale)
-
-    # expand_gp.model.kern.plot_ARD()
-    # plt.savefig(
-    #     f"{RESULTS_PATH}/nonlinear/ct_expand_lrbf_gp_ard_{get_time_identifier()}.png"
-    # )
-    # plt.close()
-    # expand_gp.model.plot_latent()
-    # plt.savefig(
-    #     f"{RESULTS_PATH}/nonlinear/ct_expand_lrbf_gp_latent_{get_time_identifier()}.png"
-    # )
-    # plt.close()
-
-    # subject mrd
-    # logger.info("Fitting subject MRD...")
-    # rbf_kernel = (
-    #     RBF(n_components, ARD=True)
-    #     + Linear(n_components)
-    #     + White(n_components)
-    # )
-    # subject_gp = GPAnalysis(
-    #     gp_type="Bayesian", kernels=rbf_kernel, name="subject_mrd_lrbf_bgp"
-    # )
-    # subject_gp.fit(subject_data, n_components)
-    # subject_gp.save_model()
-    # logger.info(subject_gp.model)
-    # for i, gp in enumerate(subject_gp.model.bgplvms):
-    #     logger.info(f"Model {i}: {gp.kern.rbf.lengthscale}")
-
-    # subject_gp.model.plot_scales()
-    # plt.savefig(
-    #     f"{RESULTS_PATH}/nonlinear/subject_mrd_ard_{get_time_identifier()}.png"
-    # )
-    # plt.close()
-    # subject_gp.model.plot_latent()
-    # plt.savefig(
-    #     f"{RESULTS_PATH}/nonlinear/subject_mrd_latent_{get_time_identifier()}.png"
-    # )
-    # plt.close()
-
-    # region mrd
-    logger.info("Fitting region MRD...")
-    for feature in DATA_FEATURES:
-        logger.info(f"Fitting MRD for feature {feature}...")
-        rbf_kernel = (
-            RBF(n_components, ARD=True)
-            + Linear(n_components)
-            + White(n_components)
-        )
-        region_gp = GPAnalysis(
-            gp_type="Bayesian",
-            kernels=rbf_kernel,
-            name=f"{feature}_region_mrd_lrbf_bgp",
-        )
-        region_gp.fit(
-            region_data[feature],
-            n_components,
-            features=["L_1", "L_2", "L_3", "L_4", "L_5", "L_6", "L_7"],
-        )
-        region_gp.save_model()
-        logger.info(region_gp.model)
-        for i, gp in enumerate(region_gp.model.bgplvms):
-            logger.info(f"Model {i}: {gp.kern.rbf.lengthscale}")
-
-        region_gp.model.plot_scales()
-        plt.savefig(
-            f"{RESULTS_PATH}/nonlinear/{feature}_region_mrd_ard_{get_time_identifier()}.png"
-        )
-        plt.close()
-        region_gp.model.plot_latent()
-        plt.savefig(
-            f"{RESULTS_PATH}/nonlinear/{feature}_region_mrd_latent_{get_time_identifier()}.png"
-        )
-        plt.close()
-
-        nonlinear_plotter.create_plots(
-            covariance_data=region_gp.get_covariance(),
-            covariance_labels=region_gp.labels,
-            sensitivity_data=region_gp.get_sensitivity(),
-            latent_data=region_gp.get_latents(),
-            name=region_gp.name,
-        )
-
-    # get gp results
-    logger.info("Plotting GP results...")
-    # nonlinear_plotter.create_plots(
-    #     covariance_data=base_gp.get_covariance(),
-    #     covariance_labels=base_gp.labels,
-    #     sensitivity_data=base_gp.get_sensitivity(),
-    #     latent_data=base_gp.get_latents(),
-    #     name=base_gp.name,
-    # )
-    # nonlinear_plotter.create_plots(
-    #     covariance_data=expand_gp.get_covariance(),
-    #     covariance_labels=expand_gp.labels,
-    #     sensitivity_data=expand_gp.get_sensitivity(),
-    #     latent_data=expand_gp.get_latents(),
-    #     name=expand_gp.name,
-    # )
-    # nonlinear_plotter.create_plots(
-    #     covariance_data=subject_gp.get_covariance(),
-    #     covariance_labels=subject_gp.labels,
-    #     sensitivity_data=subject_gp.get_sensitivity(),
-    #     latent_data=subject_gp.get_latents(),
-    #     name=subject_gp.name,
-    # )
+    logger.info("Fitting expanded GP...")
+    for burst_opt in [True, False]:
+        for latent_type in ["pca", "random", "data"]:
+            for inducing_type in ["permute", "random"]:
+                if burst_opt:
+                    for n_iters in [10, 50, 100, 500, 1000]:
+                        logger.info(
+                            f"Running burst {burst_opt} latent {latent_type} inducing {inducing_type} iters {n_iters}..."
+                        )
+                        rbf_kernel = (
+                            RBF(n_components, ARD=True)
+                            + Linear(n_components)
+                            + White(n_components)
+                        )
+                        expand_gp = GPAnalysis(
+                            gp_type="Bayesian",
+                            kernels=rbf_kernel,
+                            data_processing="expand",
+                            latent_initialization=latent_type,
+                            induced_initialization=inducing_type,
+                            use_mrd=False,
+                            burst_optimization=burst_opt,
+                            n_restarts=n_iters,
+                            name=f"fixedkern_gtol0.5_burst{burst_opt}_latent{latent_type}_inducing{inducing_type}_bursts{n_iters}",
+                        )
+                        expand_gp.fit(
+                            averaged_data,
+                            n_components,
+                        )
+                        logger.info(expand_gp.model)
+                        logger.info(expand_gp.model.kern.rbf.lengthscale)
+                        expand_gp.model.kern.plot_ARD()
+                        plt.savefig(
+                            f"{RESULTS_PATH}/nonlinear/fixedkern_gtol0.5_burst{burst_opt}_latent{latent_type}_inducing{inducing_type}_bursts{n_iters}_ard_{get_time_identifier()}.png"
+                        )
+                        plt.close()
+                        expand_gp.model.plot_latent()
+                        plt.savefig(
+                            f"{RESULTS_PATH}/nonlinear/fixedkern_gtol0.5_burst{burst_opt}_latent{latent_type}_inducing{inducing_type}_bursts{n_iters}_latent_{get_time_identifier()}.png"
+                        )
+                        plt.close()
+                        nonlinear_plotter.create_plots(
+                            covariance_data=expand_gp.get_covariance(),
+                            covariance_labels=expand_gp.labels,
+                            sensitivity_data=expand_gp.get_sensitivity(),
+                            latent_data=expand_gp.get_latents(),
+                            name=expand_gp.name,
+                        )
+                else:
+                    logger.info(
+                        f"Running burst {burst_opt} latent {latent_type} inducing {inducing_type}..."
+                    )
+                    rbf_kernel = (
+                        RBF(n_components, ARD=True)
+                        + Linear(n_components)
+                        + White(n_components)
+                    )
+                    expand_gp = GPAnalysis(
+                        gp_type="Bayesian",
+                        kernels=rbf_kernel,
+                        data_processing="expand",
+                        latent_initialization=latent_type,
+                        induced_initialization=inducing_type,
+                        use_mrd=False,
+                        burst_optimization=burst_opt,
+                        name=f"fixedkern_gtol0.5_burst{burst_opt}_latent{latent_type}_inducing{inducing_type}",
+                    )
+                    expand_gp.fit(
+                        averaged_data,
+                        n_components,
+                    )
+                    logger.info(expand_gp.model)
+                    logger.info(expand_gp.model.kern.rbf.lengthscale)
+                    expand_gp.model.kern.plot_ARD()
+                    plt.savefig(
+                        f"{RESULTS_PATH}/nonlinear/fixedkern_gtol0.5_burst{burst_opt}_latent{latent_type}_inducing{inducing_type}_ard_{get_time_identifier()}.png"
+                    )
+                    plt.close()
+                    expand_gp.model.plot_latent()
+                    plt.savefig(
+                        f"{RESULTS_PATH}/nonlinear/fixedkern_gtol0.5_burst{burst_opt}_latent{latent_type}_inducing{inducing_type}_latent_{get_time_identifier()}.png"
+                    )
+                    plt.close()
+                    nonlinear_plotter.create_plots(
+                        covariance_data=expand_gp.get_covariance(),
+                        covariance_labels=expand_gp.labels,
+                        sensitivity_data=expand_gp.get_sensitivity(),
+                        latent_data=expand_gp.get_latents(),
+                        name=expand_gp.name,
+                    )

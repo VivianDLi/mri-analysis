@@ -245,6 +245,8 @@ class RegressionOutput(TypedDict):
 
 GPType = Literal["Base", "Bayesian"]
 DataProcessingType = Literal["none", "expand"]
+LatentInitializationType = Literal["pca", "single", "random"]
+InducedInitializationType = Literal["permute", "random"]
 
 ## Plotting Types
 PlotConfig = NewType("PlotConfig", Dict[str, Any])
