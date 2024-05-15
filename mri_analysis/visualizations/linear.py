@@ -52,7 +52,11 @@ class LinearPlotter:
                     f"Covariance plot {plot} requires a numpy array to be passed as the <covariance_data> argument."
                 )
                 continue
-            if "variance" in plot and variance_data is None:
+            if (
+                "variance" in plot
+                and "covariance" not in plot
+                and variance_data is None
+            ):
                 logger.warning(
                     f"Explained variance plot {plot} requires a list to be passed as the <variance_data> argument."
                 )

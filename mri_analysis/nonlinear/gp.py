@@ -4,10 +4,11 @@ import os
 from typing import Dict, List, Union
 import numpy as np
 import pandas as pd
+from sklearn.decomposition import PCA
 from GPy.util.initialization import initialize_latent
 from GPy.core.parameterization.variational import VariationalPosterior
 from GPy.core import GP
-from GPy.kern import Kern
+from GPy.kern import Kern, RBF
 from GPy.likelihoods import Likelihood, Gaussian
 from GPy.models import GPLVM, BayesianGPLVM
 from GPy.models.mrd import MRD
@@ -22,9 +23,11 @@ from mri_analysis.datatypes import (
     LatentOutput,
     SensitivityOutput,
 )
-from mri_analysis.constants import MODELS_PATH
+from mri_analysis.constants import MODELS_PATH, RESULTS_PATH
 
 from loguru import logger
+
+from mri_analysis.utils import get_time_identifier
 
 
 def get_gp_from_type(
@@ -78,12 +81,14 @@ class GPAnalysis:
         latent_initialization: LatentInitializationType = "pca",
         induced_initialization: InducedInitializationType = "permute",
         multi_dimensional: bool = False,
-        name: str = None,
+        use_mrd: bool = True,
+        remove_components: int = None,
         n_inducing: int = 25,
         n_restarts: int = 10,
+        fixed_optimization: bool = True,
         burst_optimization: bool = False,
         n_optimization_iters: int = 5e4,
-        use_mrd: bool = True,
+        name: str = None,
     ):
         self.kernels = kernels if type(kernels) == list else kernels
         self.gp_type = gp_type
@@ -95,9 +100,11 @@ class GPAnalysis:
         # gp parameters
         self.n_inducing = n_inducing
         self.n_restarts = n_restarts
+        self.fixed_optimization = fixed_optimization
         self.burst_optimization = burst_optimization
         self.n_optimization_iters = n_optimization_iters
         self.use_mrd = use_mrd
+        self.remove_components = remove_components
 
     def fit(
         self,
@@ -105,7 +112,9 @@ class GPAnalysis:
         n_components: int,
         features: List[str] = DATA_FEATURES,
         optimize: bool = True,
+        optimization_method: str = "bfgs",
         flat_data: bool = False,
+        tol: float = None,
     ) -> None:
         """Fits the model to some data. Required before calling any other methods."""
         # set name based on parameters
@@ -133,6 +142,18 @@ class GPAnalysis:
                 drop=True
             )
         assert len(self.features) >= 1, "No numerical features found in data."
+        # remove linear PCA components
+        if self.remove_components is not None:
+            pca = PCA(n_components=len(self.features))
+            trans_y = pca.fit_transform(self.data[self.features].to_numpy())
+            logger.info(f"PCA variances: {pca.explained_variance_}")
+            modified_components = pca.components_.copy()
+            modified_components[: self.remove_components] = 0
+            new_data = trans_y @ modified_components + pca.mean_
+            new_data -= new_data.mean()
+            new_data /= new_data.std()
+            self.data[self.features] = new_data
+        self.Y = self.data[self.features].to_numpy()
         # setup YList
         Y_list = [self.data[feature].to_numpy() for feature in self.features]
         # fix 1-D Y_list
@@ -156,17 +177,43 @@ class GPAnalysis:
                 logger.warning(
                     "Data processing type not recognized. Using none."
                 )
-        # initialize latent space
         Y = np.hstack(Y_list)
+        Y -= Y.mean()
+        Y /= Y.std()
+        # initialize latent space
         match self.latent_initialization:
             case "pca":
                 X, _ = initialize_latent("PCA", n_components, Y)
-            case "single":
-                pass
             case "random":
                 X = np.random.randn(Y.shape[0], n_components)
+            case "rbf_random":
+                kern = RBF(n_components)
+                t = np.c_[
+                    [
+                        np.linspace(-1, 5, Y.shape[0])
+                        for _ in range(n_components)
+                    ]
+                ]
+                X = np.random.multivariate_normal(
+                    np.arange(n_components),
+                    kern.K(t),
+                    Y.shape[0],
+                )
+            case "cluster_random":
+                centers = np.random.uniform(-5, 5, len(Y_list))
+                components = np.array_split(range(n_components), len(Y_list))
+                X = np.hstack(
+                    [
+                        np.random.normal(
+                            centers[i],
+                            1,
+                            (Y.shape[0], len(components[i])),
+                        )
+                        for i in range(len(Y_list))
+                    ]
+                )
             case "data":
-                X = Y.copy() * np.random.randn(Y.shape[1], n_components)
+                X = Y.copy().dot(np.random.randn(Y.shape[1], n_components))
             case _:
                 logger.warning(
                     f"Unrecognized latent initialization type: {self.latent_initialization}. Using PCA."
@@ -221,50 +268,74 @@ class GPAnalysis:
             )
 
         if optimize:
-            self.fix_model()
-            self.optimize_model(gtol=0.5)
-            self.unfix_model()
-            self.optimize_model(gtol=0.5)
+            if self.fixed_optimization:
+                self.fix_model()
+                self.optimize_model(
+                    optimization_method=optimization_method,
+                    tol=tol,
+                    n_iters=250,
+                )
+                self.unfix_model()
+                self.optimize_model(
+                    optimization_method=optimization_method, tol=tol
+                )
+            else:
+                self.optimize_model(
+                    optimization_method=optimization_method, tol=tol
+                )
 
     def fix_model(self):
         self.model.kern.fix()
 
     def unfix_model(self):
-        self.model.unfix()
         self.model.kern.constrain_positive()
 
-    def optimize_model(self, gtol: float = None):
+    def optimize_model(
+        self,
+        optimization_method="bfgs",
+        tol: float = None,
+        n_iters: int = None,
+    ):
         if self.burst_optimization:
             for _ in range(self.n_restarts):
                 (
                     self.model.optimize(
-                        "bfgs",
+                        optimization_method,
                         messages=1,
-                        max_iters=100,
-                        gtol=gtol,
-                        clear_after_finish=True,
+                        max_iters=100 if n_iters is None else n_iters,
+                        gtol=tol,
+                        bfgs_factor=10.0,
                     )
-                    if gtol is not None
+                    if tol is not None
                     else self.model.optimize(
-                        "bfgs",
+                        optimization_method,
                         messages=1,
-                        max_iters=100,
-                        clear_after_finish=True,
+                        max_iters=100 if n_iters is None else n_iters,
+                        bfgs_factor=10.0,
                     )
                 )
         else:
             (
                 self.model.optimize(
-                    "bfgs",
+                    optimization_method,
                     messages=1,
-                    max_iters=self.n_optimization_iters,
-                    gtol=gtol,
+                    max_iters=(
+                        self.n_optimization_iters
+                        if n_iters is None
+                        else n_iters
+                    ),
+                    bfgs_factor=10.0,
                 )
-                if gtol is not None
+                if tol is not None
                 else self.model.optimize(
-                    "bfgs",
+                    optimization_method,
                     messages=1,
-                    max_iters=self.n_optimization_iters,
+                    max_iters=(
+                        self.n_optimization_iters
+                        if n_iters is None
+                        else n_iters
+                    ),
+                    bfgs_factor=10.0,
                 )
             )
 
@@ -320,11 +391,53 @@ class GPAnalysis:
             result_dict[f"Component_{i}"] = latents[:, i]
         return result_dict
 
+    def print_model_weights(self) -> None:
+        logger.info("Model weights:")
+        logger.info(self.model)
+        if hasattr(self.model.kern, "rbf"):
+            logger.info("RBF lengthscale:")
+            logger.info(self.model.kern.rbf.lengthscale)
+        if hasattr(self.model.kern, "linear"):
+            logger.info("Linear variance:")
+            logger.info(self.model.kern.linear.variances)
+
+    def plot_scales(self) -> None:
+        import matplotlib.pyplot as plt
+
+        self.model.kern.plot_ARD()
+        plt.savefig(
+            f"{RESULTS_PATH}/nonlinear/{self.get_name()}_ard_{get_time_identifier()}.png"
+        )
+        plt.close()
+
+    def plot_data(self) -> None:
+        import matplotlib.pyplot as plt
+
+        fig, axes = plt.subplots(self.Y.shape[1], 1, figsize=(20, 20))
+        for i, ax in enumerate(axes):
+            ax.plot(self.Y[:, i])
+        fig.savefig(
+            f"{RESULTS_PATH}/nonlinear/{self.get_name()}_data_{get_time_identifier()}.png"
+        )
+        plt.close()
+
+    def plot_latent(self) -> None:
+        import matplotlib.pyplot as plt
+
+        self.model.plot_latent()
+        plt.savefig(
+            f"{RESULTS_PATH}/nonlinear/{self.get_name()}_latent_{get_time_identifier()}.png"
+        )
+        plt.close()
+
+    def get_name(self) -> str:
+        return f"{self.name}_npca-{self.remove_components}_dp-{self.data_processing}_li-{self.latent_initialization}_ii-{self.induced_initialization}-{self.n_inducing}_md-{self.multi_dimensional}_mrd-{self.use_mrd}_opt-{self.n_optimization_iters}-{self.n_restarts}-f{self.fixed_optimization}-b{self.burst_optimization}"
+
     def save_model(self):
         assert (
             self.data is not None and self.model is not None
         ), f"GP needs to be fitted with data beforehand by calling <fit>."
-        save_location = f"{MODELS_PATH}/{self.name}.npy"
+        save_location = f"{MODELS_PATH}/{self.get_name()}.npy"
         logger.info(f"Saving GP model to {save_location}...")
         np.save(save_location, self.model.param_array)
 
@@ -332,7 +445,7 @@ class GPAnalysis:
         assert (
             self.data is not None and self.model is not None
         ), f"GP needs to be fitted with data beforehand by calling <fit>."
-        load_location = f"{MODELS_PATH}/{self.name}.npy"
+        load_location = f"{MODELS_PATH}/{self.get_name()}.npy"
         assert os.path.isfile(
             load_location
         ), f"Model weights not found at {load_location}."

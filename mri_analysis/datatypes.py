@@ -3,7 +3,7 @@
 ## Literals
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, NewType, Tuple, TypedDict
+from typing import Any, Dict, List, Literal, NewType, TypedDict
 
 import numpy as np
 import pandas as pd
@@ -24,7 +24,9 @@ DATA_COLUMNS = Literal[
     "Age",
     "Brain Volume",
 ]
+REGIONS = Literal["L_1", "L_2", "L_3", "L_4", "L_5", "L_6", "L_7", "L_8"]
 DATA_FEATURES = ["CT", "SD", "MD", "ICVF"]
+DATA_COORD_FEATURES = ["CT", "SD", "MD", "ICVF", "X", "Y", "Z"]
 NormalizeType = Literal["zscore", "median"]
 
 
@@ -46,6 +48,8 @@ class Dataset:
         remove_outliers: bool = False,
         flatten: bool = False,
         pivot: bool = "none",
+        region_subset: REGIONS = None,
+        feature_subset: DATA_COLUMNS = None,
     ) -> pd.DataFrame:
         assert (
             "Region" in self.data.columns
@@ -126,7 +130,28 @@ class Dataset:
         # filter for available columns
         sort_order = [col for col in sort_order if col in data.columns]
         logger.info(f"Sorting data by {sort_order}...")
-        data = data.sort_values(by=sort_order)
+        data = data.sort_values(by=sort_order, ignore_index=True)
+        if pivot == "label":
+            data = data.loc[
+                :,
+                (
+                    (
+                        feature_subset
+                        if feature_subset is not None
+                        else slice(None)
+                    ),
+                    (
+                        region_subset
+                        if region_subset is not None
+                        else slice(None)
+                    ),
+                ),
+            ]
+        elif pivot == "region":
+            if region_subset is not None:
+                data = data.loc[(slice(None), region_subset), :]
+            if feature_subset is not None:
+                data = data[feature_subset]
         return data
 
     def _average(self, data: pd.DataFrame) -> pd.DataFrame:

@@ -36,7 +36,7 @@ def load_dataset() -> Dataset:
     ## load metadata features
     # load von Economo labels
     if os.path.isfile(f"{METADATA_PATH}/labels.csv"):
-        logger.info(f"Found von Economo labels. Adding to existing data.")
+        logger.info("Found von Economo labels. Adding to existing data.")
         labels_df = pd.read_csv(
             f"{METADATA_PATH}/labels.csv", header=0, dtype=str
         )
@@ -45,7 +45,7 @@ def load_dataset() -> Dataset:
         data = data.merge(labels_df, how="left", on="Region")
     # load subject demographics
     if os.path.isfile(f"{METADATA_PATH}/demographics.csv"):
-        logger.info(f"Found subject demographics. Adding to existing data.")
+        logger.info("Found subject demographics. Adding to existing data.")
         demographics_df = pd.read_csv(
             f"{METADATA_PATH}/demographics.csv", header=0
         )
@@ -59,6 +59,20 @@ def load_dataset() -> Dataset:
         )
         # combine data with demographics
         data = data.merge(demographics_df, how="left", on="Subject")
+    # load Glasser coordinates
+    if os.path.isfile(f"{METADATA_PATH}/glasser_coords.txt"):
+        logger.info("Found Glasser coordinates. Adding to existing data.")
+        regions = data["Region"].unique()
+        coords = np.loadtxt(f"{METADATA_PATH}/glasser_coords.txt")
+        coords_df = pd.DataFrame(
+            data={
+                "Region": regions,
+                "X": coords[:, 0],
+                "Y": coords[:, 1],
+                "Z": coords[:, 2],
+            }
+        )
+        data = data.merge(coords_df, how="left", on="Region")
 
     return Dataset(data)
 
@@ -110,7 +124,6 @@ def load_synthetic_dataset(
             .flatten()
             .tolist()
         )
-        print(np.mean(data[classes[i]]), np.std(data[classes[i]]))
     data_df = pd.DataFrame(data)
     return (
         Dataset(data_df),
