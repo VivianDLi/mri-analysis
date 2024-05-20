@@ -88,13 +88,19 @@ if __name__ == "__main__":
 
     latent_type = "pca"
     inducing_type = "permute"
-    expand = True
+    expand = False
     burst_opt = False
     fixed_opt = False
     spatial = False
     remove_components = None
+    remove_variance = False
+
+    n_samples = 360
+    n_dim = 500
 
     # expanded data
+    np.random.seed(42)
+
     logger.info("Fitting expanded GP...")
     rbf_kernel = (
         RBF(
@@ -113,24 +119,78 @@ if __name__ == "__main__":
     gp = GPAnalysis(
         gp_type="Bayesian",
         kernels=rbf_kernel,
-        data_processing="expand",
+        data_processing=("expand" if expand else "none"),
         latent_initialization=latent_type,
         induced_initialization=inducing_type,
         use_mrd=False,
         remove_components=remove_components,
         burst_optimization=burst_opt,
         fixed_optimization=fixed_opt,
-        name=f"average_testing_spatial",
+        name=f"subject_data",
+    )
+    # region_data = region_data.swaplevel(0, 1, axis="columns")
+    gp.fit(
+        subject_data,
+        n_components,
+        features=(DATA_FEATURES if not spatial else DATA_COORD_FEATURES),
+    )
+    # gp.fit(
+    #     data,
+    #     n_components,
+    #     features=[str(i) for i in range(4)],
+    # )
+    gp.print_model_weights()
+    # gp.plot_data()
+    gp.plot_latent()
+    if remove_variance:
+        temp_name = gp.name
+        gp.name = temp_name + "_nolinear"
+        temp = gp.model.kern.linear.variances
+        gp.model.kern.linear.variances = gp.model.kern.linear.variances * 0.0
+        gp.plot_latent()
+        gp.model.kern.linear.variances = temp
+        gp.name = temp_name + "_norbf"
+        gp.model.kern.rbf.variance = 0.0
+        gp.plot_latent()
+    gp.plot_scales()
+    gp.plot_prediction()
+
+    np.random.seed(42)
+    logger.info("Fitting expanded GP 2...")
+    rbf_kernel = (
+        RBF(
+            n_components,
+            variance=rbf_variance,
+            ARD=True,
+        )
+        + Linear(
+            n_components,
+            variances=np.ones(n_components) * linear_variance,
+            ARD=True,
+        )
+        + White(n_components, variance=1e-4)
+    )
+    gp = GPAnalysis(
+        gp_type="Bayesian",
+        kernels=rbf_kernel,
+        data_processing=("expand" if expand else "none"),
+        latent_initialization=latent_type,
+        induced_initialization=inducing_type,
+        use_mrd=True,
+        remove_components=remove_components,
+        burst_optimization=burst_opt,
+        fixed_optimization=fixed_opt,
+        name=f"subject_data",
     )
     gp.fit(
-        averaged_data,
+        subject_data,
         n_components,
         features=(DATA_FEATURES if not spatial else DATA_COORD_FEATURES),
     )
     gp.print_model_weights()
-    gp.plot_data()
     gp.plot_latent()
     gp.plot_scales()
+    gp.plot_prediction()
 
     # pca = ComponentAnalysis()
     # pca.fit(averaged_data, 4)

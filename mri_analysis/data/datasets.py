@@ -188,3 +188,68 @@ def load_synthetic_dataframe(
         np.hstack(class_arrays), columns=column_index, index=row_index
     )
     return data_df
+
+
+def generate_random_synthetic_data(n_samples: int, n_dim: int) -> pd.DataFrame:
+    data = np.random.randn(n_samples, n_dim)
+    regions = np.arange(n_samples).astype(str)
+    data_dict = {str(i): data[:, i] for i in range(n_dim)}
+    data_dict["Region"] = regions
+    return pd.DataFrame(data=data_dict)
+
+
+def generate_linear_synthetic_data(n_samples: int, n_dim: int) -> pd.DataFrame:
+    kernel = Linear(n_dim) + White(n_dim, variance=0.01)
+    t = np.c_[[np.linspace(-1, 5, n_samples) for _ in range(n_dim)]].T
+    K = kernel.K(t)
+    region_means = np.zeros(n_samples)
+    data = np.random.multivariate_normal(
+        region_means, K, size=(n_dim,)
+    ).T  # n_samples x n_components
+    regions = np.arange(n_samples).astype(str)
+    data_dict = {str(i): data[:, i] for i in range(n_dim)}
+    data_dict["Region"] = regions
+    return pd.DataFrame(data=data_dict)
+
+
+def generate_nonlinear_synthetic_data(
+    n_samples: int, n_dim: int
+) -> pd.DataFrame:
+    kernel = RBF(
+        n_dim, lengthscale=np.random.uniform(1, 6, n_dim), ARD=True
+    ) + White(n_dim, variance=0.01)
+    t = np.c_[[np.linspace(-1, 5, n_samples) for _ in range(n_dim)]].T
+    K = kernel.K(t)
+    region_means = np.zeros(n_samples)
+    data = np.random.multivariate_normal(
+        region_means, K, size=(n_dim,)
+    ).T  # n_samples x n_components
+    regions = np.arange(n_samples).astype(str)
+    data_dict = {str(i): data[:, i] for i in range(n_dim)}
+    data_dict["Region"] = regions
+    return pd.DataFrame(data=data_dict)
+
+
+def generate_combined_synthetic_data(
+    n_samples: int, n_dim: int
+) -> pd.DataFrame:
+    kernel = (
+        RBF(
+            n_dim,
+            variance=0.1,
+            lengthscale=np.random.uniform(1, 6, n_dim),
+            ARD=True,
+        )
+        + Linear(n_dim)
+        + White(n_dim, variance=0.01)
+    )
+    t = np.c_[[np.linspace(-1, 5, n_samples) for _ in range(n_dim)]].T
+    K = kernel.K(t)
+    region_means = np.zeros(n_samples)
+    data = np.random.multivariate_normal(
+        region_means, K, size=(n_dim,)
+    ).T  # n_samples x n_components
+    regions = np.arange(n_samples).astype(str)
+    data_dict = {str(i): data[:, i] for i in range(n_dim)}
+    data_dict["Region"] = regions
+    return pd.DataFrame(data=data_dict)

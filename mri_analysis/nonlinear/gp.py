@@ -88,6 +88,7 @@ class GPAnalysis:
         fixed_optimization: bool = True,
         burst_optimization: bool = False,
         n_optimization_iters: int = 5e4,
+        expand_args: Dict[str, Union[int, float]] = {},
         name: str = None,
     ):
         self.kernels = kernels if type(kernels) == list else kernels
@@ -103,6 +104,13 @@ class GPAnalysis:
         self.fixed_optimization = fixed_optimization
         self.burst_optimization = burst_optimization
         self.n_optimization_iters = n_optimization_iters
+        self.expand_args = {
+            "dim": 500,
+            "noise": 1e-6,
+            "var": 1.0,
+        }
+        for key, value in expand_args.items():
+            self.expand_args[key] = value
         self.use_mrd = use_mrd
         self.remove_components = remove_components
 
@@ -167,8 +175,12 @@ class GPAnalysis:
             case "expand":
                 # multiply each array by high-dimensional random noise
                 Y_list = [
-                    Y.dot(np.random.randn(Y.shape[1], 100))
-                    + 1e-6 * np.random.randn(Y.shape[0], 100)
+                    Y.dot(
+                        self.expand_args["var"]
+                        * np.random.randn(Y.shape[1], self.expand_args["dim"])
+                    )
+                    + self.expand_args["noise"]
+                    * np.random.randn(Y.shape[0], self.expand_args["dim"])
                     for Y in Y_list
                 ]
                 Y_list = [Y - Y.mean(0) for Y in Y_list]
@@ -235,6 +247,7 @@ class GPAnalysis:
         ## setup MRD model
         if self.use_mrd:
             logger.info("Using MRD model...")
+            print([Y.shape for Y in Y_list])
             self.model = MRD(
                 Y_list,
                 n_components,
@@ -429,6 +442,42 @@ class GPAnalysis:
             f"{RESULTS_PATH}/nonlinear/{self.get_name()}_latent_{get_time_identifier()}.png"
         )
         plt.close()
+
+    def plot_prediction(self) -> None:
+        import matplotlib.pyplot as plt
+
+        if isinstance(self.model.X, VariationalPosterior):
+            latents = self.model.X.mean
+        else:
+            latents = self.model.X
+        for i in range(latents.shape[1]):
+            latent_data = np.repeat(np.linspace(-5, 5, 20), latents.shape[0])
+            new_latent = np.tile(latents, (20, 1))
+            new_latent[:, i] = latent_data
+            if self.use_mrd:
+                fig, axes = plt.subplots(
+                    len(self.features), 1, figsize=(20, 20)
+                )
+                for j, feat in enumerate(self.features):
+                    mean, _ = self.model.predict(new_latent, Yindex=j)
+                    x = range(len(mean))
+                    mean_avg, mean_std = mean.mean(axis=1), mean.std(axis=1)
+                    axes[j].fill_between(x, mean_avg - mean_std, mean_avg + mean_std, alpha=0.5)
+                    axes[j].plot(mean_avg)
+                    axes[j].set_title(feat)
+            else:
+                mean, _ = self.model.predict(new_latent)
+                fig, axes = plt.subplots(
+                    len(self.features), 1, figsize=(20, 20)
+                )
+                for j, feat in enumerate(self.features):
+                    axes[j].plot(mean[:, j])
+                    axes[j].set_title(feat)
+            fig.suptitle(f"Predictions for latent component {i}")
+            fig.savefig(
+                f"{RESULTS_PATH}/nonlinear/{self.get_name()}_prediction_{i}_{get_time_identifier()}.png"
+            )
+            plt.close()
 
     def get_name(self) -> str:
         return f"{self.name}_npca-{self.remove_components}_dp-{self.data_processing}_li-{self.latent_initialization}_ii-{self.induced_initialization}-{self.n_inducing}_md-{self.multi_dimensional}_mrd-{self.use_mrd}_opt-{self.n_optimization_iters}-{self.n_restarts}-f{self.fixed_optimization}-b{self.burst_optimization}"
