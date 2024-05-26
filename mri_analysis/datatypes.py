@@ -3,7 +3,7 @@
 ## Literals
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, NewType, TypedDict
+from typing import Any, Dict, List, Literal, NewType, TypedDict, Union
 
 import numpy as np
 import pandas as pd
@@ -36,7 +36,15 @@ class Dataset:
     average_feature: str = "Region"
     features: List[str] = field(default_factory=lambda: DATA_FEATURES)
     sort_order: List[str] = field(
-        default_factory=lambda: ["Feature", "Labels", "Region", "Subject"]
+        default_factory=lambda: [
+            "Feature",
+            "Labels",
+            "Region Index",
+            "Sex",
+            "Age",
+            "Brain Volume",
+            "Subject",
+        ]
     )
     normalize_type: NormalizeType = "zscore"
 
@@ -108,17 +116,28 @@ class Dataset:
                         values=self.features,
                         index=[
                             feat
-                            for feat in ["Region", "Labels"]
+                            for feat in ["Region Index", "Region", "Labels"]
                             if feat in data.columns
                         ],
-                        columns="Subject",
+                        columns=["Sex", "Subject"],
                     )
+                    if "Sex" in sort_order:
+                        sort_order.remove("Sex")
                     if "Subject" in sort_order:
                         sort_order.remove("Subject")
                 case "label":
                     data = data.pivot_table(
                         values=self.features,
-                        index="Subject",
+                        index=[
+                            feat
+                            for feat in [
+                                "Subject",
+                                "Age",
+                                "Brain Volume",
+                                "Sex",
+                            ]
+                            if feat in data.columns
+                        ],
                         columns=["Labels", "Region"],
                     )
                     if "Labels" in sort_order:
@@ -245,10 +264,18 @@ class Dataset:
 
 
 ## Latent Types
-CovarianceOutput = NewType("CovarianceOutput", np.ndarray)
-ComponentOutput = NewType("ComponentOutput", Dict[str, np.array])
+CovarianceOutput = NewType(
+    "CovarianceOutput", Dict[str, Dict[str, np.ndarray]]
+)
+ComponentOutput = NewType("ComponentOutput", Dict[str, Dict[str, np.array]])
 LatentOutput = NewType("LatentOutput", Dict[str, np.array])
-SensitivityOutput = NewType("SensitivityOutput", np.array)
+SensitivityOutput = NewType(
+    "SensitivityOutput", Dict[str, Dict[str, np.array]]
+)
+PredictionOutput = NewType(
+    "PredictionOutput",
+    Dict[int, Dict[str, Dict[str, Union[Dict[str, np.ndarray], np.ndarray]]]],
+)
 
 
 class ExplainedVarianceOutput(TypedDict):
@@ -292,7 +319,11 @@ LinearPlotType = Literal[
 ]
 
 NonlinearPlotType = Literal[
-    "gp_covariance", "gp_covariance_brain", "gp_sensitivity", "gp_latents"
+    "gp_covariance",
+    "gp_covariance_brain",
+    "gp_sensitivity",
+    "gp_latents",
+    "gp_prediction",
 ]
 
 BrainPlotType = Literal["brain_feature", "brain_regression"]

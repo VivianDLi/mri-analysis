@@ -74,7 +74,7 @@ class DistributionPlotter:
 
     def _plot_feature_histogram(self, data: pd.DataFrame, **kwargs) -> None:
         # plot distribution of population-wide features
-        fig, axes = plt.subplots(2, 2, figsize=(12, 15))
+        fig, axes = plt.subplots(2, 2, figsize=(12, 12))
         for i, feature in enumerate(DATA_FEATURES):
             sns.histplot(
                 data, x=feature, bins=100, ax=axes[i % 2][i // 2], **kwargs

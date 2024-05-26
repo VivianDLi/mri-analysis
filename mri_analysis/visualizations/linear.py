@@ -39,7 +39,7 @@ class LinearPlotter:
     def create_plots(
         self,
         covariance_data: CovarianceOutput = None,
-        variance_data: List[ExplainedVarianceOutput] = None,
+        variance_data: Dict[int, ExplainedVarianceOutput] = None,
         component_data: ComponentOutput = None,
         latent_data: LatentOutput = None,
         name: str = None,
@@ -110,15 +110,15 @@ class LinearPlotter:
 
     def _plot_pca_variance(
         self,
-        variance_data: List[ExplainedVarianceOutput],
+        variance_data: Dict[int, ExplainedVarianceOutput],
         name: str = None,
         **kwargs,
     ) -> None:
         variances = []
         num_components = []
-        for i, data in enumerate(variance_data):
+        for i, data in variance_data.items():
             variances.append(data["total_variance"])
-            num_components.append(i + 1)
+            num_components.append(i)
         sns.lineplot(x=num_components, y=variances, **kwargs)
         plt.xlabel("Number of PCA Components")
         plt.ylabel("Percentage of Explained Variance")
@@ -157,7 +157,7 @@ class LinearPlotter:
                 **kwargs,
             )
             p.set_xlabel("Feature")
-            p.set_title(component_name)
+            p.set_title(f"Component {component_name}")
         # plot features
         for i, (feature_name, components) in enumerate(
             feature_components.items()
@@ -170,7 +170,7 @@ class LinearPlotter:
             )
             p.set_xlabel("Component")
             p.set_title(feature_name)
-        fig.suptitle("PCA Eigenvectors")
+        fig.suptitle("PCA Eigenvalues")
         plt.savefig(
             f"{RESULTS_PATH}/linear/{'' if name is None else name}_pca_eigenvectors_{get_time_identifier()}.png"
         )

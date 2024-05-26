@@ -46,11 +46,14 @@ class ComponentAnalysis:
         assert (
             self.data is not None and self.pca is not None
         ), f"PCA needs to be fitted with data beforehand by calling <fit>."
-
-        return {
-            "variances": self.pca.explained_variance_,
-            "total_variance": np.sum(self.pca.explained_variance_),
-        }
+        result_dict = {}
+        for i in range(1, self.pca.n_components_):
+            self.fit(self.data, i)
+            result_dict[i] = {
+                "variances": self.pca.explained_variance_,
+                "total_variance": np.sum(self.pca.explained_variance_),
+            }
+        return result_dict
 
     def get_components(self) -> ComponentOutput:
         """Gets the direction of each component in the original feature space."""
@@ -61,7 +64,7 @@ class ComponentAnalysis:
         components = self.pca.components_
         result_dict = {}
         for i in range(components.shape[0]):
-            result_dict[f"Component_{i}"] = components[i, :]
+            result_dict[i] = components[i, :]
         return result_dict
 
     def get_latents(self) -> LatentOutput:

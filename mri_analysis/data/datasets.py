@@ -32,6 +32,9 @@ def load_dataset() -> Dataset:
         len(dataset_files) > 0
     ), f"No dataset files found in data path: {DATA_PATH}"
     data = pd.concat(map(_load_subject_data, dataset_files), ignore_index=True)
+    data["Region Index"] = data["Region"].map(
+        {region: i for i, region in enumerate(data["Region"].unique())}
+    )
 
     ## load metadata features
     # load von Economo labels
@@ -40,14 +43,14 @@ def load_dataset() -> Dataset:
         labels_df = pd.read_csv(
             f"{METADATA_PATH}/labels.csv", header=0, dtype=str
         )
-        labels_df["Labels"] = "L_" + labels_df["Labels"]
+        labels_df["Labels"] = "Label " + labels_df["Labels"]
         # combine data with labels
         data = data.merge(labels_df, how="left", on="Region")
     # load subject demographics
     if os.path.isfile(f"{METADATA_PATH}/demographics.csv"):
         logger.info("Found subject demographics. Adding to existing data.")
         demographics_df = pd.read_csv(
-            f"{METADATA_PATH}/demographics.csv", header=0
+            f"{METADATA_PATH}/demographics.csv", header=0, dtype=str
         )
         demographics_df.rename(
             columns={
@@ -56,6 +59,13 @@ def load_dataset() -> Dataset:
                 "Estimated Total Intracranial Volume": "Brain Volume",
             },
             inplace=True,
+        )
+        demographics_df["Age"] = "Age " + demographics_df["Age"]
+        demographics_df["Brain Volume"] = (
+            "Brain Volume " + demographics_df["Brain Volume"]
+        )
+        demographics_df["Sex"] = demographics_df["Sex"].map(
+            {"0": "Female", "1": "Male"}
         )
         # combine data with demographics
         data = data.merge(demographics_df, how="left", on="Subject")

@@ -21,6 +21,7 @@ from mri_analysis.datatypes import (
     LatentInitializationType,
     CovarianceOutput,
     LatentOutput,
+    PredictionOutput,
     SensitivityOutput,
 )
 from mri_analysis.constants import MODELS_PATH, RESULTS_PATH
@@ -85,7 +86,7 @@ class GPAnalysis:
         remove_components: int = None,
         n_inducing: int = 25,
         n_restarts: int = 10,
-        fixed_optimization: bool = True,
+        fixed_optimization: bool = False,
         burst_optimization: bool = False,
         n_optimization_iters: int = 5e4,
         expand_args: Dict[str, Union[int, float]] = {},
@@ -138,7 +139,7 @@ class GPAnalysis:
             self.features = features
         if isinstance(self.data.columns, pd.MultiIndex):  # subject data
             self.labels = self.data.droplevel(
-                level=1, axis="columns"
+                level=list(range(1, self.data.columns.nlevels)), axis="columns"
             ).reset_index()[
                 list(set(self.data.index.names) - set(self.features))
             ]
@@ -160,7 +161,14 @@ class GPAnalysis:
             new_data = trans_y @ modified_components + pca.mean_
             new_data -= new_data.mean()
             new_data /= new_data.std()
-            self.data[self.features] = new_data
+            self.data.loc[
+                :,
+                (
+                    self.features
+                    if not isinstance(self.data.columns, pd.MultiIndex)
+                    else (self.features, slice(None))
+                ),
+            ] = new_data
         self.Y = self.data[self.features].to_numpy()
         # setup YList
         Y_list = [self.data[feature].to_numpy() for feature in self.features]
@@ -354,39 +362,70 @@ class GPAnalysis:
 
     def get_covariance(
         self,
-    ) -> Dict[str, CovarianceOutput]:
+    ) -> CovarianceOutput:
         """Gets the estimated covariance matrix for the model."""
         assert (
             self.data is not None and self.model is not None
         ), f"GP needs to be fitted with data beforehand by calling <fit>."
         result_dict = {}
-        if self.use_mrd:
-            for i, feature in enumerate(self.features):
-                X = self.model.bgplvms[i].X.mean
-                result_dict[feature] = self.model.bgplvms[i].kern.K(X)
-        else:
-            if isinstance(self.model.X, VariationalPosterior):
-                X = self.model.X.mean
+        if hasattr(self.model.kern, "linear"):
+            result_dict["Linear"] = {}
+            if self.use_mrd:
+                for i, feature in enumerate(self.features):
+                    X = self.model.bgplvms[i].X.mean
+                    result_dict["Linear"][feature] = self.model.bgplvms[
+                        i
+                    ].kern.linear.K(X)
             else:
-                X = self.model.X
-            result_dict["All"] = self.model.kern.K(X)
+                if isinstance(self.model.X, VariationalPosterior):
+                    X = self.model.X.mean
+                else:
+                    X = self.model.X
+                result_dict["Linear"]["All"] = self.model.kern.linear.K(X)
+        if hasattr(self.model.kern, "rbf"):
+            result_dict["RBF"] = {}
+            if self.use_mrd:
+                for i, feature in enumerate(self.features):
+                    X = self.model.bgplvms[i].X.mean
+                    result_dict["RBF"][feature] = self.model.bgplvms[
+                        i
+                    ].kern.rbf.K(X)
+            else:
+                if isinstance(self.model.X, VariationalPosterior):
+                    X = self.model.X.mean
+                else:
+                    X = self.model.X
+                result_dict["RBF"]["All"] = self.model.kern.rbf.K(X)
         return result_dict
 
-    def get_sensitivity(self) -> Dict[str, SensitivityOutput]:
+    def get_sensitivity(self) -> SensitivityOutput:
         """Gets the input sensitivity of each latent component."""
         assert (
             self.data is not None and self.model is not None
         ), f"GP needs to be fitted with data beforehand by calling <fit>."
         result_dict = {}
-        if self.use_mrd:
-            for i, feature in enumerate(self.features):
-                result_dict[feature] = self.model.bgplvms[
-                    i
-                ].kern.input_sensitivity(summarize=False)[0, :]
-        else:
-            result_dict["All"] = self.model.kern.input_sensitivity(
-                summarize=False
-            )[0, :]
+        if hasattr(self.model.kern, "linear"):
+            result_dict["Linear"] = {}
+            if self.use_mrd:
+                for i, feature in enumerate(self.features):
+                    result_dict["Linear"][feature] = self.model.bgplvms[
+                        i
+                    ].kern.linear.input_sensitivity(summarize=True)
+            else:
+                result_dict["Linear"]["All"] = (
+                    self.model.kern.linear.input_sensitivity(summarize=True)
+                )
+        if hasattr(self.model.kern, "rbf"):
+            result_dict["RBF"] = {}
+            if self.use_mrd:
+                for i, feature in enumerate(self.features):
+                    result_dict["RBF"][feature] = self.model.bgplvms[
+                        i
+                    ].kern.rbf.input_sensitivity(summarize=True)
+            else:
+                result_dict["RBF"]["All"] = (
+                    self.model.kern.rbf.input_sensitivity(summarize=True)
+                )
         return result_dict
 
     def get_latents(self) -> LatentOutput:
@@ -403,6 +442,108 @@ class GPAnalysis:
         for i in range(latents.shape[1]):
             result_dict[f"Component_{i}"] = latents[:, i]
         return result_dict
+
+    def get_predictions(self) -> PredictionOutput:
+        """Gets the posterior predictions of each feature for each latent dimension."""
+        assert (
+            self.data is not None and self.model is not None
+        ), f"GP needs to be fitted with data beforehand by calling <fit>."
+        if isinstance(self.model.X, VariationalPosterior):
+            latents = np.array(self.model.X.mean)
+        else:
+            latents = np.array(self.model.X)
+        average_latents = latents.mean(axis=0)
+        # setup tiled latents
+        tiled_average_latents = np.tile(average_latents, (20, 1))
+        new_latent_data = np.linspace(-5, 5, 20).T
+        # predict
+        index_type = "Region" if "Region" in self.labels.columns else "Subject"
+        results_dict = {}
+        for i in range(latents.shape[1]):
+            results_dict[i] = {}
+            if self.use_mrd:
+                ##  if MRD is of feature, predict for each feature independently
+                if self.features == DATA_FEATURES:
+                    # average latent
+                    results_dict[i]["Average"] = {}
+                    new_latent = tiled_average_latents.copy()
+                    new_latent[:, i] = new_latent_data
+                    for j, feat in enumerate(self.features):
+                        mean, _ = self.model.predict(new_latent, Yindex=j)
+                        results_dict[i]["Average"][feat] = mean
+                    # latent per region/subject
+                    results_dict[i][index_type] = {}
+                    for j, data_point in enumerate(
+                        self.labels[index_type].unique()
+                    ):
+                        results_dict[i][index_type][data_point] = {}
+                        new_latent = np.tile(latents[j], (20, 1))
+                        new_latent[:, i] = new_latent_data
+                        for k, feat in enumerate(self.features):
+                            mean, _ = self.model.predict(new_latent, Yindex=k)
+                            results_dict[i][index_type][data_point][
+                                feat
+                            ] = mean
+                ##  if MRD is of label/gender, predict for all features together
+                else:
+                    # average latent
+                    results_dict[i]["Average"] = {}
+                    new_latent = tiled_average_latents.copy()
+                    new_latent[:, i] = new_latent_data
+                    for j, feat in enumerate(DATA_FEATURES):
+                        results_dict[i]["Average"][feat] = {}
+                        for k, label in enumerate(self.features):
+                            mean, _ = self.model.predict(new_latent, Yindex=k)
+                            feature_means = np.split(
+                                mean, len(DATA_FEATURES), axis=1
+                            )
+                            results_dict[i]["Average"][feat][label] = (
+                                feature_means[j]
+                            )
+                    # latent per region/subject
+                    results_dict[i][index_type] = {}
+                    for j, data_point in enumerate(
+                        self.labels[index_type].unique()
+                    ):
+                        results_dict[i][index_type][data_point] = {}
+                        new_latent = np.tile(latents[j], (20, 1))
+                        new_latent[:, i] = new_latent_data
+                        for k, feat in enumerate(DATA_FEATURES):
+                            results_dict[i][index_type][data_point][feat] = {}
+                            for l, label in enumerate(self.features):
+                                mean, _ = self.model.predict(
+                                    new_latent, Yindex=l
+                                )
+                                feature_means = np.split(
+                                    mean, len(DATA_FEATURES), axis=1
+                                )
+                                results_dict[i][index_type][data_point][feat][
+                                    label
+                                ] = feature_means[k]
+            else:
+                # average latent
+                results_dict[i]["Average"] = {}
+                new_latent = tiled_average_latents.copy()
+                new_latent[:, i] = new_latent_data
+                mean, _ = self.model.predict(new_latent)
+                feature_means = np.split(mean, len(self.features), axis=1)
+                for j, feat in enumerate(self.features):
+                    results_dict[i]["Average"][feat] = feature_means[j]
+                # latent per region/subject
+                results_dict[i][index_type] = {}
+                for j, data_point in enumerate(
+                    self.labels[index_type].unique()
+                ):
+                    results_dict[i][index_type][data_point] = {}
+                    new_latent = np.tile(latents[j], (20, 1))
+                    new_latent[:, i] = new_latent_data
+                    mean, _ = self.model.predict(new_latent)
+                    feature_means = np.split(mean, len(self.features), axis=1)
+                    for k, feat in enumerate(self.features):
+                        results_dict[i][index_type][data_point][feat] = (
+                            feature_means[k]
+                        )
+        return results_dict
 
     def print_model_weights(self) -> None:
         logger.info("Model weights:")
@@ -442,42 +583,6 @@ class GPAnalysis:
             f"{RESULTS_PATH}/nonlinear/{self.get_name()}_latent_{get_time_identifier()}.png"
         )
         plt.close()
-
-    def plot_prediction(self) -> None:
-        import matplotlib.pyplot as plt
-
-        if isinstance(self.model.X, VariationalPosterior):
-            latents = self.model.X.mean
-        else:
-            latents = self.model.X
-        for i in range(latents.shape[1]):
-            latent_data = np.repeat(np.linspace(-5, 5, 20), latents.shape[0])
-            new_latent = np.tile(latents, (20, 1))
-            new_latent[:, i] = latent_data
-            if self.use_mrd:
-                fig, axes = plt.subplots(
-                    len(self.features), 1, figsize=(20, 20)
-                )
-                for j, feat in enumerate(self.features):
-                    mean, _ = self.model.predict(new_latent, Yindex=j)
-                    x = range(len(mean))
-                    mean_avg, mean_std = mean.mean(axis=1), mean.std(axis=1)
-                    axes[j].fill_between(x, mean_avg - mean_std, mean_avg + mean_std, alpha=0.5)
-                    axes[j].plot(mean_avg)
-                    axes[j].set_title(feat)
-            else:
-                mean, _ = self.model.predict(new_latent)
-                fig, axes = plt.subplots(
-                    len(self.features), 1, figsize=(20, 20)
-                )
-                for j, feat in enumerate(self.features):
-                    axes[j].plot(mean[:, j])
-                    axes[j].set_title(feat)
-            fig.suptitle(f"Predictions for latent component {i}")
-            fig.savefig(
-                f"{RESULTS_PATH}/nonlinear/{self.get_name()}_prediction_{i}_{get_time_identifier()}.png"
-            )
-            plt.close()
 
     def get_name(self) -> str:
         return f"{self.name}_npca-{self.remove_components}_dp-{self.data_processing}_li-{self.latent_initialization}_ii-{self.induced_initialization}-{self.n_inducing}_md-{self.multi_dimensional}_mrd-{self.use_mrd}_opt-{self.n_optimization_iters}-{self.n_restarts}-f{self.fixed_optimization}-b{self.burst_optimization}"
