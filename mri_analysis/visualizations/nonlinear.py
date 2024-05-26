@@ -275,8 +275,8 @@ class NonlinearPlotter:
         palettes = ["deep", "muted", "pastel", "dark", "bright"]
         f, ax = plt.subplots(
             figsize=(
-                5 * len(sensitivity_data[list(sensitivity_data.keys())[0]]),
-                8 * len(sensitivity_data),
+                8 * len(sensitivity_data[list(sensitivity_data.keys())[0]]),
+                5 * len(sensitivity_data),
             )
         )
         for i, kernel_type in enumerate(sensitivity_data):
@@ -392,6 +392,7 @@ class NonlinearPlotter:
                             # check for MRD model
                             if isinstance(predictions[feat], dict):
                                 data_dict["View"] = []
+                                data_dict["Latent Value"] = []
                                 for view, prediction in predictions[
                                     feat
                                 ].items():
@@ -401,10 +402,12 @@ class NonlinearPlotter:
                                     data_dict["View"].extend(
                                         [view] * len(prediction.flatten())
                                     )
-                                data_dict["Latent Value"] = np.repeat(
-                                    np.linspace(-5, 5, 20),
-                                    len(data_dict[feat]) // 20,
-                                )
+                                    data_dict["Latent Value"].extend(
+                                        np.repeat(
+                                            np.linspace(-5, 5, 20),
+                                            len(prediction.flatten()) // 20,
+                                        )
+                                    )
                             else:
                                 data_dict["Latent Value"] = np.repeat(
                                     np.linspace(-5, 5, 20),
@@ -464,10 +467,13 @@ class NonlinearPlotter:
                                         data_dict["View"].extend(
                                             [view] * len(prediction.flatten())
                                         )
-                                    data_dict["Latent Value"] = np.repeat(
-                                        np.linspace(-5, 5, 20),
-                                        len(data_dict[feat]) // 20,
-                                    )
+                                        data_dict["Latent Value"].extend(
+                                            np.repeat(
+                                                np.linspace(-5, 5, 20),
+                                                len(prediction.flatten())
+                                                // 20,
+                                            )
+                                        )
                                 else:
                                     data_dict["Latent Value"] = np.repeat(
                                         np.linspace(-5, 5, 20),

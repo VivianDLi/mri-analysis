@@ -353,7 +353,7 @@ if __name__ == "__main__":
     )
     nonlinear_brain_plotter = NonlinearPlotter(
         plots=[
-            # "gp_covariance_brain",
+            "gp_covariance_brain",
             "gp_covariance",
             "gp_sensitivity",
             "gp_prediction",
