@@ -47,11 +47,11 @@ class ComponentAnalysis:
             self.data is not None and self.pca is not None
         ), f"PCA needs to be fitted with data beforehand by calling <fit>."
         result_dict = {}
-        for i in range(1, self.pca.n_components_):
+        for i in range(1, self.pca.n_components_ + 1):
             self.fit(self.data, i)
             result_dict[i] = {
-                "variances": self.pca.explained_variance_,
-                "total_variance": np.sum(self.pca.explained_variance_),
+                "variances": self.pca.explained_variance_ratio_,
+                "total_variance": np.sum(self.pca.explained_variance_ratio_),
             }
         return result_dict
 
